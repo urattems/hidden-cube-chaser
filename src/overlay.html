@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>Hidden Cube Chaser</title>
+    <link rel="stylesheet" href="overlay.css" />
+  </head>
+  <body>
+    <div id="edit-banner">Glisse pour déplacer · icône de la barre des tâches → Verrouiller</div>
+
+    <section id="card" class="card hidden">
+      <header>
+        <span id="gem" class="gem"></span>
+        <span id="title">Cube caché</span>
+        <span id="badge" class="badge"></span>
+        <span id="age" class="age"></span>
+      </header>
+      <div class="main">
+        <div class="dial">
+          <svg viewBox="-60 -60 120 120" aria-hidden="true">
+            <circle class="ring" r="54" />
+            <text id="dial-label" class="dial-label" y="-40">N</text>
+            <g id="arrow" class="arrow">
+              <path d="M0,-44 L22,10 L0,0 L-22,10 Z" />
+            </g>
+            <circle class="hub" r="5" />
+          </svg>
+        </div>
+        <div class="readout">
+          <div id="distance" class="distance">—</div>
+          <div id="accuracy" class="accuracy"></div>
+          <div id="direction" class="direction"></div>
+          <div id="rise" class="rise"></div>
+        </div>
+      </div>
+      <div id="hint" class="hint"></div>
+      <div id="coords" class="coords"></div>
+    </section>
+
+    <section id="radar-wrap" class="radar-wrap hidden">
+      <canvas id="radar" width="440" height="440"></canvas>
+      <div id="others" class="others"></div>
+    </section>
+
+    <script src="geometry.js"></script>
+    <script src="overlay.js"></script>
+  </body>
+</html>

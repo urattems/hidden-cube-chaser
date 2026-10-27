@@ -1,0 +1,246 @@
+:root {
+  --bg: rgb(14 16 22 / 0.82);
+  --line: rgb(255 255 255 / 0.12);
+  --text: #f1f2f6;
+  --muted: #9aa1b2;
+  --gold: #f5b91a;
+  --red: #ff5252;
+  --near: #4ade80;
+  --accent: var(--gold);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: transparent;
+  color: var(--text);
+  font: 13px/1.3 "Segoe UI", system-ui, sans-serif;
+  user-select: none;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  height: 100vh;
+}
+
+body.red {
+  --accent: var(--red);
+}
+
+body.near {
+  --accent: var(--near);
+}
+
+.hidden {
+  display: none !important;
+}
+
+#edit-banner {
+  display: none;
+}
+
+body.edit {
+  -webkit-app-region: drag;
+  outline: 2px dashed rgb(255 255 255 / 0.5);
+  outline-offset: -2px;
+  border-radius: 14px;
+  background: rgb(255 255 255 / 0.04);
+}
+
+body.edit #edit-banner {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.card {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 14px;
+  padding: 10px 12px 9px;
+  box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 30%, transparent);
+  transition: border-color 0.4s, box-shadow 0.4s;
+}
+
+.card.taken {
+  --accent: #6b7280;
+  opacity: 0.75;
+}
+
+.card.fresh {
+  animation: pop 0.6s ease-out 3;
+}
+
+@keyframes pop {
+  50% {
+    box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+}
+
+.gem {
+  width: 12px;
+  height: 12px;
+  transform: rotate(45deg);
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+}
+
+.age {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+.main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.dial {
+  width: 112px;
+  height: 112px;
+  flex: none;
+}
+
+.dial svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.ring {
+  fill: rgb(255 255 255 / 0.04);
+  stroke: var(--line);
+  stroke-width: 2;
+}
+
+.dial-label {
+  fill: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.arrow {
+  transition: transform 0.25s linear;
+}
+
+.arrow path {
+  fill: var(--accent);
+  filter: drop-shadow(0 0 6px var(--accent));
+}
+
+.card.taken .arrow {
+  opacity: 0.25;
+}
+
+.hub {
+  fill: var(--text);
+}
+
+.readout {
+  min-width: 0;
+}
+
+.distance {
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.distance small {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.accuracy {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.direction {
+  font-size: 15px;
+  font-weight: 600;
+  margin-top: 5px;
+}
+
+.rise {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.hint {
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--text);
+  opacity: 0.9;
+}
+
+.hint:empty,
+.coords:empty {
+  display: none;
+}
+
+.coords {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.radar-wrap {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  flex: none;
+}
+
+#radar {
+  width: 220px;
+  height: 220px;
+}
+
+.others {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+}

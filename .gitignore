@@ -1,0 +1,6 @@
+node_modules/
+build/
+# Diagnostic output: holds in-game positions
+tools/probe.log
+tools/probe-objects.json
+tools/probe.stdout.txt
