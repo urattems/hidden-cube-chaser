@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'" />
+    <title>Zone de la mini-carte</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        cursor: crosshair;
+        background: rgb(0 0 0 / 0.35);
+        font: 600 18px "Segoe UI", system-ui, sans-serif;
+        color: #fff;
+        user-select: none;
+        overflow: hidden;
+      }
+      #help {
+        position: fixed;
+        top: 40px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgb(14 16 22 / 0.9);
+        border: 1px solid #f5b91a;
+        border-radius: 12px;
+        padding: 12px 18px;
+        text-align: center;
+        line-height: 1.5;
+      }
+      #help small {
+        font-weight: 400;
+        color: #c9ccd6;
+      }
+      #box {
+        position: fixed;
+        border: 2px solid #f5b91a;
+        background: rgb(245 185 26 / 0.12);
+        box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.25);
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="help">
+      Trace un rectangle autour de la carte d'angle du jeu (la mini-carte en bas à droite)<br />
+      <small>Ton personnage doit être au centre du rectangle · Échap pour annuler</small>
+    </div>
+    <div id="box"></div>
+    <script>
+      let start;
+      let box = document.getElementById("box");
+      function rect(e) {
+        let x = Math.min(start.x, e.clientX);
+        let y = Math.min(start.y, e.clientY);
+        return { x, y, width: Math.abs(e.clientX - start.x), height: Math.abs(e.clientY - start.y) };
+      }
+      addEventListener("mousedown", (e) => {
+        start = { x: e.clientX, y: e.clientY };
+        box.style.display = "block";
+      });
+      addEventListener("mousemove", (e) => {
+        if (!start) return;
+        let r = rect(e);
+        Object.assign(box.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px` });
+      });
+      addEventListener("mouseup", (e) => {
+        if (!start) return;
+        let r = rect(e);
+        start = undefined;
+        if (r.width < 80 || r.height < 80) {
+          box.style.display = "none";
+          return;
+        }
+        window.picker.done(r);
+      });
+      addEventListener("keydown", (e) => e.key === "Escape" && window.picker.cancel());
+    </script>
+  </body>
+</html>

@@ -3,8 +3,13 @@ const { bearingNorthUp, wrap180, compassPoint } = window.Geometry;
 const $ = (id) => document.getElementById(id);
 const LOOK_FR = { gold: "OR", red: "ROUGE" };
 const NEAR_M = 6;
-const HEADING_WINDOW_MS = 2500;
-const HEADING_MIN_MOVE = 600; // 6 m in world units
+// Travel needed before the movement gives a heading: short with the corner map's exact track,
+// longer on Questlog's estimate, which wanders by metres.
+const HEADING = {
+  minimap: { windowMs: 1500, minMove: 250 },
+  estimate: { windowMs: 2500, minMove: 600 },
+};
+const HEADING_HOLD_MS = 8000; // keep the last heading this long once standing still
 const SONAR_MAX_M = 80;
 
 let state;
@@ -33,18 +38,24 @@ function trackHistory() {
   let self = state.self;
   if (!self) return;
   let last = history.at(-1);
-  if (!last || last.x !== self.x || last.y !== self.y) history.push({ x: self.x, y: self.y, t: Date.now() });
-  let cutoff = Date.now() - HEADING_WINDOW_MS * 2;
+  // A switch between the exact track and the estimate jumps by metres: start the history over.
+  if (last && last.source !== self.source) history = [];
+  last = history.at(-1);
+  if (!last || last.x !== self.x || last.y !== self.y)
+    history.push({ x: self.x, y: self.y, t: Date.now(), source: self.source });
+  let cutoff = Date.now() - 6000;
   history = history.filter((p) => p.t >= cutoff);
 }
 
-// Bearing of travel over the last couple of seconds, or undefined when standing still.
+// Bearing of travel over the last second or two; held a few seconds once standing still.
+let heldHeading;
 function movementHeading() {
   let now = history.at(-1);
-  if (!now) return undefined;
-  let from = history.find((p) => now.t - p.t <= HEADING_WINDOW_MS);
-  if (!from || Math.hypot(now.x - from.x, now.y - from.y) < HEADING_MIN_MOVE) return undefined;
-  return bearingNorthUp(from, now);
+  let rule = HEADING[now?.source] ?? HEADING.estimate;
+  let from = now && history.find((p) => now.t - p.t <= rule.windowMs);
+  if (from && Math.hypot(now.x - from.x, now.y - from.y) >= rule.minMove)
+    heldHeading = { bearing: bearingNorthUp(from, now), at: Date.now() };
+  return heldHeading && Date.now() - heldHeading.at < HEADING_HOLD_MS ? heldHeading.bearing : undefined;
 }
 
 function target() {
@@ -109,7 +120,12 @@ function render() {
   } else {
     let shown = distance < 10 ? distance.toFixed(0) : Math.round(distance);
     $("distance").innerHTML = `${accuracy >= 5 ? "≈" : ""}${shown}<small> m</small>`;
-    $("accuracy").textContent = accuracy >= 5 ? `± ${Math.round(accuracy)} m (position estimée)` : "position précise";
+    $("accuracy").textContent =
+      self.source === "minimap"
+        ? "position exacte (mini-carte)"
+        : accuracy >= 5
+          ? `± ${Math.round(accuracy)} m (position estimée)`
+          : "position précise";
   }
   $("direction").textContent =
     bearing === undefined
@@ -155,10 +171,12 @@ function describeRise(rise) {
 }
 
 function hint(cube, distance, accuracy, near) {
+  let exact = state.self?.source === "minimap";
   if (cube.taken) return "Quelqu'un l'a ouvert.";
-  if (near) return "Tu y es ! Regarde autour de toi (ouvre la carte M : marqueur exact via Map Overlay).";
+  if (near) return exact ? "Tu y es ! Il est juste là." : "Tu y es ! Regarde autour de toi.";
+  if (!exact && state.minimap === "lost") return "Mini-carte du jeu cachée : position estimée en attendant.";
   if (accuracy >= 15) return "Position approximative : lance un buff ou une compétence pour la recaler.";
-  if (distance !== undefined && distance < 25) return "Tout proche. Le marqueur exact est sur la carte (Map Overlay).";
+  if (!exact && distance !== undefined && distance < 25) return "Tout proche. Le marqueur exact est sur la carte (Map Overlay).";
   return "";
 }
 
@@ -179,8 +197,17 @@ function renderPlaceholder() {
   $("title").textContent = "Hidden Cube Chaser";
   $("badge").textContent = IDLE_STATUS[status] ?? status ?? "";
   $("age").textContent = "";
-  $("hint").textContent = state.edit ? "Place-moi où tu veux voir les cubes." : "";
+  $("hint").textContent = state.edit ? "Place-moi où tu veux voir les cubes." : (IDLE_MINIMAP[state.minimap] ?? "");
 }
+
+const IDLE_MINIMAP = {
+  fix: "Mini-carte : position exacte ✓",
+  searching: "Mini-carte : calibrage…",
+  lost: "Mini-carte : non trouvée (cachée ?)",
+  "no-region": "Mini-carte : choisis sa zone dans le menu",
+  "no-prior": "Mini-carte : en attente de ta position",
+  "no-map": "Mini-carte : carte non gérée ici",
+};
 
 // --- radar ------------------------------------------------------------------------------------
 

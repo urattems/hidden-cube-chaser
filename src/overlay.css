@@ -83,6 +83,12 @@ body.edit #edit-banner {
   display: none;
 }
 
+.card.idle .hint {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .card.taken {
   --accent: #6b7280;
   opacity: 0.75;

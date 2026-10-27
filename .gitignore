@@ -5,3 +5,4 @@ tools/probe.log
 tools/probe-objects.json
 tools/probe.stdout.txt
 tools/recordings/
+tools/vision-test.log
