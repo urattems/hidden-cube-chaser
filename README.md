@@ -43,6 +43,17 @@ lue sur la carte d'angle du jeu.
 
 Si le dossier est déplacé plus tard, décoche puis recoche **Lancer avec Windows** dans le menu.
 
+## Mises à jour
+
+La version portable vérifie les *Releases* GitHub au démarrage, puis toutes les 6 heures. Quand
+une version plus récente existe, une notification Windows s'affiche et le menu propose
+**⬆ Installer la mise à jour x.y.z**. Un clic suffit : Chaser télécharge le zip, se ferme,
+remplace ses fichiers et redémarre. Les réglages (dans `%AppData%`) ne bougent pas.
+
+Le dépôt étant privé, Chaser utilise la connexion de l'outil GitHub CLI : sur un nouveau PC,
+l'installer (`winget install GitHub.cli`) puis lancer une fois `gh auth login`. Sans lui, le menu
+affiche « connexion GitHub requise ». Depuis les sources, la mise à jour se fait par `git pull`.
+
 ## Utilisation
 
 - Lancer : `Hidden Cube Chaser.exe` (version portable), ou depuis les sources
