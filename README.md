@@ -33,8 +33,11 @@ Si le dossier est déplacé plus tard, décoche puis recoche **Lancer avec Windo
 - Lancer : `Hidden Cube Chaser.exe` (version portable), ou depuis les sources
   `Hidden Cube Chaser.vbs`. Une icône de cube apparaît dans la barre des tâches. Chaser démarre
   ensuite avec Windows, comme Questlog.
-- L'overlay ne s'affiche que si le jeu tourne **et** qu'un cube est détecté. Le jeu doit être en
-  **plein écran fenêtré** (borderless).
+- L'overlay ne s'affiche que si le jeu tourne **et** qu'un cube est détecté. Avec **Toujours
+  afficher (même sans cube)**, une petite barre « Aucun cube à portée » reste visible tant que
+  le jeu tourne. Le jeu doit être en **plein écran fenêtré** (borderless).
+- Avec deux écrans, l'overlay s'ouvre sur l'écran principal : utilise **Déplacer l'overlay**
+  pour le mettre sur l'écran du jeu.
 - Icône de la barre des tâches :
   - **Déplacer l'overlay**, puis **Verrouiller** une fois placé
   - **Aperçu (démo 50 s)** pour voir l'overlay sans cube

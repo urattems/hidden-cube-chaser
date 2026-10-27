@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS = {
   volume: 0.6,
   mapOverlayExport: true,
   streamable: false, // hidden from OBS/Discord/screenshots until switched on, like Map Overlay
+  alwaysShow: false, // keep a small status panel up while the game runs, even with no cube
   questlogAsar: DEFAULT_ASAR,
   loginItemInitialized: false,
 };
@@ -46,7 +47,9 @@ function log(line) {
 
 function loadSettings() {
   try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8")) };
+    // A file saved by hand from Windows PowerShell starts with a BOM, which JSON.parse rejects.
+    let text = fs.readFileSync(SETTINGS_FILE, "utf8").replace(/^﻿/, "");
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(text) };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -139,9 +142,12 @@ function pushState(force = false) {
 
 function updateVisibility(state) {
   if (!overlay) return;
-  let wanted = editMode || state.demo || (state.game && state.cubes.length > 0);
-  if (wanted && !overlay.isVisible()) overlay.showInactive();
-  if (!wanted && overlay.isVisible()) overlay.hide();
+  let wanted = editMode || state.demo || (state.game && (state.cubes.length > 0 || settings.alwaysShow));
+  if (wanted === overlay.isVisible()) return;
+  if (wanted) overlay.showInactive();
+  else overlay.hide();
+  let b = overlay.getBounds();
+  log(`overlay ${wanted ? "shown" : "hidden"} at ${b.x},${b.y} (${state.cubes.length} cube(s))`);
 }
 
 const exporter = new MapOverlayExport(log);
@@ -296,6 +302,7 @@ function rebuildTray() {
       radio("Nord de la carte en haut", "north"),
       radio("Sens de déplacement (expérimental)", "movement"),
       { type: "separator" },
+      check("Toujours afficher (même sans cube)", "alwaysShow"),
       check("Son à l'apparition d'un cube", "chime"),
       check("Sonar de proximité", "sonar"),
       check("Marqueur dans Map Overlay", "mapOverlayExport"),

@@ -67,10 +67,12 @@ function render() {
   let cube = target();
   let card = $("card");
   let radar = $("radar-wrap");
+  let idle = !cube && (state.edit || state.settings.alwaysShow);
+  card.classList.toggle("idle", idle);
   if (!cube) {
-    card.classList.toggle("hidden", !state.edit);
+    card.classList.toggle("hidden", !idle);
     radar.classList.add("hidden");
-    if (state.edit) renderPlaceholder();
+    if (idle) renderPlaceholder();
     updateSonar(undefined);
     return;
   }
@@ -145,18 +147,24 @@ function hint(cube, distance, accuracy, near) {
   return "";
 }
 
+const IDLE_STATUS = {
+  capturing: "Aucun cube à portée",
+  "waiting-for-game": "En attente d'Aion 2",
+  starting: "Démarrage…",
+  "worker-restarting": "Redémarrage du décodeur…",
+  "no-npcap": "Npcap n'est pas installé",
+  "no-questlog": "Questlog introuvable",
+  error: "Erreur de capture",
+};
+
 function renderPlaceholder() {
   document.body.classList.remove("red", "near");
   $("card").classList.remove("taken", "fresh");
+  let status = state.status?.state;
   $("title").textContent = "Hidden Cube Chaser";
-  $("badge").textContent = "aucun cube";
+  $("badge").textContent = IDLE_STATUS[status] ?? status ?? "";
   $("age").textContent = "";
-  $("distance").textContent = "—";
-  $("accuracy").textContent = "L'overlay s'affichera ici.";
-  $("direction").textContent = "";
-  $("rise").textContent = "";
-  $("hint").textContent = "";
-  $("coords").textContent = "";
+  $("hint").textContent = state.edit ? "Place-moi où tu veux voir les cubes." : "";
 }
 
 // --- radar ------------------------------------------------------------------------------------

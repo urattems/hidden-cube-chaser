@@ -72,6 +72,17 @@ body.edit #edit-banner {
   transition: border-color 0.4s, box-shadow 0.4s;
 }
 
+.card.idle {
+  --accent: #9aa1b2;
+  opacity: 0.8;
+  box-shadow: none;
+}
+
+.card.idle .main,
+.card.idle .coords {
+  display: none;
+}
+
 .card.taken {
   --accent: #6b7280;
   opacity: 0.75;
