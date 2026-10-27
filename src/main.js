@@ -1,12 +1,14 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, screen, shell } = require("electron");
+const { app, BrowserWindow, Menu, Notification, Tray, nativeImage, screen, shell } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const { QuestlogWorker, DEFAULT_ASAR } = require("./questlog-worker");
 const { MapOverlayExport } = require("./map-overlay-export");
 const { MAPS } = require("./geometry");
 const { MinimapTracker, mapOverlayRegion, mapsAvailable, pickRegion } = require("./minimap");
+const { Updater } = require("./updater");
 
 app.setName("Hidden Cube Chaser");
+app.setAppUserModelId("Hidden Cube Chaser"); // Windows shows no notifications for an app without one
 if (!app.requestSingleInstanceLock()) app.exit(0);
 
 const USER_DIR = app.getPath("userData");
@@ -18,6 +20,8 @@ const OVERLAY_SIZE = { width: 340, height: 470 };
 const PUSH_INTERVAL_MS = 100;
 const PURGE_INTERVAL_MS = 60 * 60 * 1000;
 const PURGE_AGE_MS = 6 * 60 * 60 * 1000;
+const UPDATE_FIRST_CHECK_MS = 15 * 1000;
+const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 // Folders the worker fills with fight history we never read; Questlog's own grew to 1.8 GB.
 const PURGED_DIRS = ["combat-logs", "encounters", "dummies", "drops", "pvp", "runs", "training", "nightmares"];
 // A corner-map fix older than this falls back to Questlog's estimate.
@@ -255,6 +259,43 @@ async function chooseMinimapRegion() {
   saveMinimap({ region, anchor: { x: 0.5, y: 0.5 }, scale: undefined });
 }
 
+// --- updates --------------------------------------------------------------------------------
+
+const updater = new Updater(log);
+let notifiedVersion;
+updater.on("change", (state) => {
+  rebuildTray();
+  if (state.status !== "available" || notifiedVersion === state.latest || !Notification.isSupported()) return;
+  notifiedVersion = state.latest;
+  let note = new Notification({
+    title: `Hidden Cube Chaser ${state.latest} est disponible`,
+    body: "Clique ici pour mettre à jour (Chaser redémarre tout seul).",
+    icon: ICON,
+  });
+  note.on("click", () => updater.install());
+  note.show();
+});
+
+function updateMenuItem() {
+  let s = updater.state;
+  switch (s.status) {
+    case "available":
+      return { label: `⬆ Installer la mise à jour ${s.latest}`, click: () => updater.install() };
+    case "downloading":
+      return { label: `Mise à jour ${s.latest} : téléchargement…`, enabled: false };
+    case "checking":
+      return { label: "Recherche de mise à jour…", enabled: false };
+    case "auth":
+      return { label: "Mises à jour : connexion GitHub requise (gh auth login)", click: () => updater.check() };
+    case "error":
+      return { label: "Mise à jour : échec, réessayer", click: () => (s.asset ? updater.install() : updater.check()) };
+    case "dev":
+      return { label: "Version de développement (mise à jour par git pull)", enabled: false };
+    default:
+      return { label: `Vérifier les mises à jour${s.status === "up-to-date" ? " (à jour)" : ""}`, click: () => updater.check() };
+  }
+}
+
 // --- demo -----------------------------------------------------------------------------------
 
 function startDemo() {
@@ -372,7 +413,8 @@ function statusLine() {
 function rebuildTray() {
   if (!tray) return;
   let minimapLine = `Mini-carte : ${MINIMAP_FR[live.minimap.status] ?? live.minimap.status}`;
-  tray.setToolTip(`Hidden Cube Chaser\n${statusLine()}\n${minimapLine}`);
+  let available = updater.state.status === "available" ? `\n⬆ Mise à jour ${updater.state.latest} disponible` : "";
+  tray.setToolTip(`Hidden Cube Chaser ${app.getVersion()}\n${statusLine()}\n${minimapLine}${available}`);
   let chosen = minimapRegion();
   let check = (label, key) => ({
     label,
@@ -450,6 +492,8 @@ function rebuildTray() {
         click: (item) => app.setLoginItemSettings({ ...loginItemOptions(), openAtLogin: item.checked }),
       },
       { type: "separator" },
+      { label: `Hidden Cube Chaser ${app.getVersion()}`, enabled: false },
+      updateMenuItem(),
       { label: "Ouvrir le journal", click: () => shell.openPath(LOG_FILE) },
       { label: "Quitter", click: () => app.quit() },
     ]),
@@ -480,6 +524,13 @@ app.whenReady().then(() => {
 
   purgeWorkerHistory();
   setInterval(purgeWorkerHistory, PURGE_INTERVAL_MS);
+
+  updater.cleanup();
+  setTimeout(() => updater.check(), UPDATE_FIRST_CHECK_MS);
+  setInterval(() => updater.check(), UPDATE_INTERVAL_MS);
+  // Diagnostics: --update-now installs a newer release as soon as the first check finds one.
+  if (process.argv.includes("--update-now"))
+    updater.on("change", (s) => s.status === "available" && updater.install());
 
   worker = new QuestlogWorker({ asarPath: settings.questlogAsar, dataDir: WORKER_DIR, log });
   worker.on("status", (status) => {
