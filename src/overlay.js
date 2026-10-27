@@ -100,6 +100,7 @@ function render() {
     arrowAngle += wrap180(relative - arrowAngle);
     $("arrow").style.transform = `rotate(${arrowAngle}deg)`;
   }
+  $("cone").setAttribute("d", distance === undefined || cube.taken ? "" : conePath(distance, accuracy));
   $("dial-label").textContent = heading === undefined ? "N" : "▲";
 
   if (distance === undefined) {
@@ -124,6 +125,20 @@ function render() {
   let others = (state.cubes ?? []).filter((c) => c !== cube && !c.taken).length;
   $("others").textContent = others ? `+ ${others} autre${others > 1 ? "s" : ""} cube${others > 1 ? "s" : ""} sur le radar` : "";
   updateSonar(cube.taken ? undefined : distance);
+}
+
+// The directions the cube can really be in, given how far off our own position may be: a thin
+// beam right after a buff fixes the position, a wide fan while it is only estimated.
+const CONE_MIN_DEG = 4;
+const CONE_MAX_DEG = 90;
+const CONE_RADIUS = 52;
+
+function conePath(distance, accuracy) {
+  let half = distance > 0 ? (Math.atan2(accuracy, distance) * 180) / Math.PI : CONE_MAX_DEG;
+  half = (Math.min(CONE_MAX_DEG, Math.max(CONE_MIN_DEG, half)) * Math.PI) / 180;
+  let x = (CONE_RADIUS * Math.sin(half)).toFixed(1);
+  let y = (-CONE_RADIUS * Math.cos(half)).toFixed(1);
+  return `M0,0 L-${x},${y} A${CONE_RADIUS},${CONE_RADIUS} 0 0 1 ${x},${y} Z`;
 }
 
 function describeRelative(angle) {

@@ -172,6 +172,12 @@ header {
   filter: drop-shadow(0 0 6px var(--accent));
 }
 
+.arrow path.cone {
+  fill: color-mix(in srgb, var(--accent) 28%, transparent);
+  filter: none;
+  transition: d 0.4s;
+}
+
 .card.taken .arrow {
   opacity: 0.25;
 }

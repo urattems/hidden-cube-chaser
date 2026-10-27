@@ -53,6 +53,14 @@ class QuestlogWorker extends EventEmitter {
     return id;
   }
 
+  // One-off call into the worker's router (not replayed after a restart).
+  mutate(procedurePath, input) {
+    this.child?.postMessage({
+      connection: 1,
+      message: { id: this.nextId++, type: "mutation", path: procedurePath, input },
+    });
+  }
+
   start() {
     if (!fs.existsSync(this.asarPath)) {
       this.emit("status", { state: "no-questlog", error: `Questlog introuvable : ${this.asarPath}` });
