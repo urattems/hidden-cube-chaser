@@ -23,6 +23,13 @@ lue sur la carte d'angle du jeu.
   - Dans un donjon, une grotte, ou si la carte d'angle est fermée, Chaser revient à
     l'estimation de Questlog, avec le cône d'incertitude autour de la flèche. Il ne donne jamais
     une position douteuse pour une position exacte.
+- **Les cubes sont dessinés sur la carte d'angle du jeu** (en bas à droite), à leur place exacte
+  et numérotés, dès que Chaser y lit ta position. Un cube hors du cadre devient une flèche au
+  bord avec sa distance. La carte d'angle doit être **ouverte** : si elle est fermée quand un
+  cube apparaît, l'overlay te le rappelle. Les marqueurs n'apparaissent jamais dans les
+  captures d'écran, sinon la lecture de la carte les confondrait avec le terrain.
+- **Plusieurs cubes** : chacun garde son numéro (Cube 1, Cube 2…) sur l'overlay, le radar et la
+  carte d'angle. L'overlay vise le plus proche et liste les autres avec leur distance.
 - **La flèche** suit ta direction de déplacement (« Devant, à gauche »…) et garde la dernière
   direction quelques secondes à l'arrêt. Sinon, elle a le nord en haut, comme la carte du jeu.
 

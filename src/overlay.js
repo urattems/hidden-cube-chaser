@@ -103,7 +103,7 @@ function render() {
   card.classList.toggle("taken", cube.taken);
   card.classList.toggle("fresh", Date.now() < freshUntil);
 
-  $("title").textContent = `Cube caché · ${LOOK_FR[cube.look] ?? ""}`;
+  $("title").textContent = `Cube ${cube.n ?? ""} · ${LOOK_FR[cube.look] ?? ""}`;
   $("badge").textContent = cube.taken ? "Ouvert par quelqu'un" : cube.spawned ? "Vient d'apparaître" : "Déjà là";
   $("age").textContent = cube.since ? formatAge(Date.now() - cube.since) : "";
 
@@ -138,9 +138,21 @@ function render() {
   $("coords").textContent = `${state.mapName ?? `Carte ${state.map ?? "?"}`} · X ${Math.round(cube.x / 100)}  Y ${Math.round(cube.y / 100)}`;
 
   drawRadar(cube, heading, accuracy);
-  let others = (state.cubes ?? []).filter((c) => c !== cube && !c.taken).length;
-  $("others").textContent = others ? `+ ${others} autre${others > 1 ? "s" : ""} cube${others > 1 ? "s" : ""} sur le radar` : "";
+  renderOthers(cube);
   updateSonar(cube.taken ? undefined : distance);
+}
+
+// Every other cube on one line each: its number, colour, distance and direction.
+function renderOthers(focus) {
+  let self = state.self;
+  let lines = (state.cubes ?? [])
+    .filter((c) => c !== focus && !c.taken && Number.isFinite(c.x))
+    .map((c) => {
+      if (!self) return `Cube ${c.n} · ${LOOK_FR[c.look]?.toLowerCase() ?? ""}`;
+      let d = Math.round(metres(Math.hypot(c.x - self.x, c.y - self.y)));
+      return `Cube ${c.n} · ${LOOK_FR[c.look]?.toLowerCase() ?? ""} · ${d} m ${compassPoint(bearingNorthUp(self, c))}`;
+    });
+  $("others").textContent = lines.join("\n");
 }
 
 // The directions the cube can really be in, given how far off our own position may be: a thin
@@ -174,7 +186,9 @@ function hint(cube, distance, accuracy, near) {
   let exact = state.self?.source === "minimap";
   if (cube.taken) return "Quelqu'un l'a ouvert.";
   if (near) return exact ? "Tu y es ! Il est juste là." : "Tu y es ! Regarde autour de toi.";
-  if (!exact && state.minimap === "lost") return "Mini-carte du jeu cachée : position estimée en attendant.";
+  if (state.markersShown) return "Les cubes sont marqués sur la carte d'angle (en bas à droite).";
+  if (!exact && state.minimap && state.minimap !== "off")
+    return "Ouvre la carte d'angle du jeu (en bas à droite) : les cubes y seront marqués exactement.";
   if (accuracy >= 15) return "Position approximative : lance un buff ou une compétence pour la recaler.";
   if (!exact && distance !== undefined && distance < 25) return "Tout proche. Le marqueur exact est sur la carte (Map Overlay).";
   return "";
@@ -294,6 +308,11 @@ function drawRadar(focus, heading, accuracy) {
       let s = cube === focus ? 15 : 10;
       ctx.fillRect(-s / 2, -s / 2, s, s);
       ctx.restore();
+      if (cube.n !== undefined) {
+        ctx.fillStyle = "#f1f2f6";
+        ctx.font = "700 20px Segoe UI";
+        ctx.fillText(String(cube.n), x + 16, y - 10);
+      }
       if (d * scale > radius) {
         ctx.fillStyle = colour;
         ctx.font = "600 18px Segoe UI";

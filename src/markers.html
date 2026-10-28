@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+    <title>Hidden Cube Chaser - marqueurs</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+        font: 800 16px "Segoe UI", system-ui, sans-serif;
+        user-select: none;
+      }
+      .marker {
+        position: absolute;
+        width: 0;
+        height: 0;
+        transition: left 0.25s linear, top 0.25s linear;
+      }
+      .gem {
+        position: absolute;
+        left: -11px;
+        top: -11px;
+        width: 22px;
+        height: 22px;
+        transform: rotate(45deg);
+        border: 2px solid #fff;
+        border-radius: 3px;
+        box-shadow: 0 0 10px var(--c), 0 0 0 2px rgb(0 0 0 / 0.6);
+        background: var(--c);
+      }
+      .ring {
+        position: absolute;
+        left: -22px;
+        top: -22px;
+        width: 40px;
+        height: 40px;
+        border: 3px solid var(--c);
+        border-radius: 50%;
+        animation: ping 1.4s ease-out infinite;
+      }
+      @keyframes ping {
+        from {
+          transform: scale(0.5);
+          opacity: 1;
+        }
+        to {
+          transform: scale(1.5);
+          opacity: 0;
+        }
+      }
+      .label {
+        position: absolute;
+        left: 12px;
+        top: -24px;
+        padding: 0 6px;
+        border-radius: 6px;
+        border: 1px solid var(--c);
+        background: rgb(14 16 22 / 0.9);
+        color: var(--c);
+        white-space: nowrap;
+      }
+      .edge .gem {
+        display: none;
+      }
+      .edge .ring {
+        display: none;
+      }
+      .arrow {
+        display: none;
+        position: absolute;
+        left: -14px;
+        top: -14px;
+        width: 28px;
+        height: 28px;
+      }
+      .edge .arrow {
+        display: block;
+      }
+      .arrow path {
+        fill: var(--c);
+        stroke: #fff;
+        stroke-width: 2;
+      }
+      .taken {
+        --c: #6b7280 !important;
+        opacity: 0.6;
+      }
+      .taken .ring {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <script src="markers.js"></script>
+  </body>
+</html>

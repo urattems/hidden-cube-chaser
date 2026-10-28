@@ -16,7 +16,7 @@ const LOG_FILE = path.join(USER_DIR, "chaser.log");
 const SETTINGS_FILE = path.join(USER_DIR, "settings.json");
 const WORKER_DIR = path.join(USER_DIR, "worker");
 const ICON = path.join(__dirname, "..", "assets", "icon.png");
-const OVERLAY_SIZE = { width: 340, height: 470 };
+const OVERLAY_SIZE = { width: 340, height: 540 };
 const PUSH_INTERVAL_MS = 100;
 const PURGE_INTERVAL_MS = 60 * 60 * 1000;
 const PURGE_AGE_MS = 6 * 60 * 60 * 1000;
@@ -120,6 +120,13 @@ function fusedSelf(estimate) {
   return estimate && { ...estimate, source: "estimate" };
 }
 
+// Cubes keep the number they got when first seen ("Cube 1", "Cube 2") until none is left.
+let cubeNumbers = new Map();
+function cubeNumber(cube) {
+  if (!cubeNumbers.has(cube.id)) cubeNumbers.set(cube.id, Math.max(0, ...cubeNumbers.values()) + 1);
+  return cubeNumbers.get(cube.id);
+}
+
 function cubeCoordinates(cube, objects) {
   let object = objects?.find((o) => o.entity === cube.entity);
   if (object) return { x: object.x, y: object.y };
@@ -130,8 +137,12 @@ function cubeCoordinates(cube, objects) {
 function snapshot() {
   if (demo) return demo.state();
   let positions = live.positions ?? {};
+  if (live.cubes.length === 0) cubeNumbers.clear();
+  let byAge = [...live.cubes].sort((a, b) => (a.createdAt ?? a.seenAt) - (b.createdAt ?? b.seenAt));
+  for (let c of byAge) cubeNumber(c);
   let cubes = live.cubes.map((c) => ({
     key: c.id,
+    n: cubeNumber(c),
     entity: c.entity,
     look: c.look,
     spawned: c.spawned,
@@ -161,6 +172,8 @@ function pushState(force = false) {
   pushTimer = setTimeout(() => {
     pushTimer = undefined;
     let state = { ...snapshot(), edit: editMode, demo: !!demo, settings };
+    let markerList = updateMarkers(state);
+    state.markersShown = !!markerList?.length;
     let text = JSON.stringify(state);
     if (text !== lastPushed) {
       lastPushed = text;
@@ -179,6 +192,67 @@ function updateVisibility(state) {
   else overlay.hide();
   let b = overlay.getBounds();
   log(`overlay ${wanted ? "shown" : "hidden"} at ${b.x},${b.y} (${state.cubes.length} cube(s))`);
+}
+
+// --- cubes drawn on the game's corner map -----------------------------------------------------
+
+const REF_PX_PER_CM = 8192 / 8160 / 100; // reference map px per world cm
+let markersWin;
+
+function createMarkersWindow() {
+  markersWin = new BrowserWindow({
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    skipTaskbar: true,
+    focusable: false,
+    hasShadow: false,
+    alwaysOnTop: true,
+    webPreferences: { preload: path.join(__dirname, "markers-preload.js"), backgroundThrottling: false },
+  });
+  markersWin.setAlwaysOnTop(true, "screen-saver");
+  markersWin.setIgnoreMouseEvents(true);
+  // Always out of screen captures: the vision window captures this very region, and markers in
+  // it would be matched against the map.
+  markersWin.setContentProtection(true);
+  markersWin.loadFile(path.join(__dirname, "markers.html"));
+}
+
+// Where each cube sits on the corner map, from the latest exact fix: the fix is the world point
+// under the anchor pixel, and the calibrated zoom turns metres into screen pixels.
+function updateMarkers(state) {
+  if (!markersWin) return undefined;
+  let fix = live.minimap.fix;
+  let chosen = minimapRegion();
+  let usable =
+    !state.demo && state.game && chosen && live.minimap.scale && fix && Date.now() - fix.at < MINIMAP_FRESH_MS;
+  let list = [];
+  if (usable) {
+    let dip = screen.screenToDipRect(null, chosen.region);
+    let scaleFactor = screen.getDisplayMatching(dip).scaleFactor;
+    let bounds = markersWin.getBounds();
+    if (bounds.x !== dip.x || bounds.y !== dip.y || bounds.width !== dip.width || bounds.height !== dip.height)
+      markersWin.setBounds(dip);
+    let k = REF_PX_PER_CM / live.minimap.scale / scaleFactor; // CSS px per world cm
+    let ax = chosen.anchor.x * dip.width;
+    let ay = chosen.anchor.y * dip.height;
+    list = state.cubes
+      .filter((c) => Number.isFinite(c.x))
+      .map((c) => ({
+        key: c.key,
+        n: c.n,
+        look: c.look,
+        taken: c.taken,
+        x: ax + (c.x - fix.x) * k,
+        y: ay + (c.y - fix.y) * k,
+        distance: Math.hypot(c.x - fix.x, c.y - fix.y) / 100,
+      }));
+  }
+  markersWin.webContents.send("markers", list);
+  if (list.length && !markersWin.isVisible()) markersWin.showInactive();
+  if (!list.length && markersWin.isVisible()) markersWin.hide();
+  return list;
 }
 
 const exporter = new MapOverlayExport(log);
@@ -244,6 +318,7 @@ minimap.on("result", (r) => {
   if (r.status === "fix") {
     live.minimap.fix = { x: r.x, y: r.y, at: r.at };
     live.minimap.mapKey = r.mapKey;
+    live.minimap.scale = r.scale;
     if (r.scale !== settings.minimap.scale || r.mapKey !== settings.minimap.mapKey) {
       log(`minimap calibrated: scale ${r.scale.toFixed(3)} on ${r.mapKey}`);
       saveMinimap({ scale: r.scale, mapKey: r.mapKey });
@@ -325,8 +400,8 @@ function startDemo() {
         mapName: "Verteron (démo)",
         self,
         cubes: [
-          { key: "demo-1", look: "gold", spawned: true, taken: t > 44, since: started - 4000, rise: 3, ...cube },
-          { key: "demo-2", look: "red", spawned: false, taken: false, since: started - 90000, rise: -1, x: cube.x + 9000, y: cube.y + 6000 },
+          { key: "demo-1", n: 1, look: "gold", spawned: true, taken: t > 44, since: started - 4000, rise: 3, ...cube },
+          { key: "demo-2", n: 2, look: "red", spawned: false, taken: false, since: started - 90000, rise: -1, x: cube.x + 2200, y: cube.y + 1500 },
         ],
       };
     },
@@ -381,9 +456,11 @@ function createOverlay() {
   });
   overlay.on("moved", () => saveSettings({ bounds: overlay.getBounds() }));
   setInterval(() => {
-    if (!overlay.isVisible()) return;
-    overlay.setAlwaysOnTop(true, "screen-saver");
-    overlay.moveTop();
+    for (let win of [overlay, markersWin]) {
+      if (!win?.isVisible()) continue;
+      win.setAlwaysOnTop(true, "screen-saver");
+      win.moveTop();
+    }
   }, RAISE_INTERVAL_MS);
 }
 
@@ -526,6 +603,7 @@ app.whenReady().then(() => {
     saveSettings({ loginItemInitialized: true });
   }
   createOverlay();
+  createMarkersWindow();
   tray = new Tray(nativeImage.createFromPath(ICON));
   tray.on("click", () => tray.popUpContextMenu());
   rebuildTray();
