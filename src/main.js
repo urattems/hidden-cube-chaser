@@ -20,6 +20,9 @@ const OVERLAY_SIZE = { width: 340, height: 470 };
 const PUSH_INTERVAL_MS = 100;
 const PURGE_INTERVAL_MS = 60 * 60 * 1000;
 const PURGE_AGE_MS = 6 * 60 * 60 * 1000;
+// The game, when it gets the focus back, can end up above our topmost window; put it back on top
+// this often while it shows. It cannot take the focus (focusable: false), so the game keeps it.
+const RAISE_INTERVAL_MS = 2000;
 const UPDATE_FIRST_CHECK_MS = 15 * 1000;
 const UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 // Folders the worker fills with fight history we never read; Questlog's own grew to 1.8 GB.
@@ -377,6 +380,11 @@ function createOverlay() {
     pushState(true);
   });
   overlay.on("moved", () => saveSettings({ bounds: overlay.getBounds() }));
+  setInterval(() => {
+    if (!overlay.isVisible()) return;
+    overlay.setAlwaysOnTop(true, "screen-saver");
+    overlay.moveTop();
+  }, RAISE_INTERVAL_MS);
 }
 
 function setEditMode(on) {
