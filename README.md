@@ -30,6 +30,16 @@ lue sur la carte d'angle du jeu.
   captures d'écran, sinon la lecture de la carte les confondrait avec le terrain.
 - **Plusieurs cubes** : chacun garde son numéro (Cube 1, Cube 2…) sur l'overlay, le radar et la
   carte d'angle. L'overlay vise le plus proche et liste les autres avec leur distance.
+- **Groupes d'emplacements** : chaque cube appartient à un groupe d'emplacements possibles (95
+  groupes et 1440 emplacements à Verteron, 59 et 1371 à Altgard, lus dans le client par
+  aion2maps). L'overlay indique le groupe du cube, par exemple « Altamia Southern 03 ·
+  emplacement 14/20 ». Avec l'option **Montrer où un cube ouvert peut réapparaître** (décochée
+  par défaut), un cube ouvert fait apparaître tous les emplacements de son groupe en points bleus
+  sur la carte d'angle : il reviendra sur l'un d'eux. Un point devient gris quand tu passes à
+  moins de 30 m sans qu'un cube y soit annoncé (pendant 5 min, car la réapparition peut tarder).
+  Le plus proche hors du cadre devient une flèche au bord. Les points disparaissent dès que le
+  nouveau cube est détecté, ou après 30 min. Le journal note le délai de chaque réapparition.
+  Données : `node tools\extract-cube-spots.js <dossier aion2maps>` régénère `src\data\cube-spots.json`.
 - **Le sonar** bipe de plus en plus vite et de plus en plus aigu en approchant, régulièrement,
   sans saut à l'arrivée : chaque mètre gagné s'entend. S'il redescend, tu t'éloignes. Il commence
   à 60 m.
@@ -85,6 +95,7 @@ affiche « connexion GitHub requise ». Depuis les sources, la mise à jour se f
     la carte en haut
   - **Lire la mini-carte (position exacte)**, **Sélectionner la zone de la mini-carte…**,
     **Reprendre la zone de Map Overlay**, **Recalibrer le zoom de la mini-carte**
+  - **Montrer où un cube ouvert peut réapparaître** (décochée par défaut)
   - Son à l'apparition, sonar de proximité (bips plus rapides et plus aigus en approchant)
   - **Visible en stream / enregistrement** : décoché par défaut, l'overlay est invisible dans
     OBS, Discord et les captures d'écran. Coche-le pour le montrer, et utilise la *Capture

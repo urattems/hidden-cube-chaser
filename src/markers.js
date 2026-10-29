@@ -1,6 +1,6 @@
 // Draws the cubes on the game's corner map. Positions arrive in CSS px of this window, which
 // covers the corner map exactly; cubes beyond its frame become arrows pinned to the edge.
-const COLOURS = { gold: "#f5b91a", red: "#ff5252" };
+const COLOURS = { gold: "#f5b91a", red: "#ff5252", spot: "#7dd3fc" };
 // Inside of the frame, clear of the opacity sliders on top and the buttons on the right.
 const FRAME = { left: 0.03, top: 0.08, right: 0.92, bottom: 0.95 };
 
@@ -28,9 +28,14 @@ window.markers.onUpdate((list) => {
   let cy = (box.y0 + box.y1) / 2;
   let seen = new Set();
   for (let m of list) {
+    let spot = m.kind === "spot";
+    let inside = m.x >= box.x0 && m.x <= box.x1 && m.y >= box.y0 && m.y <= box.y1;
+    // Of the candidate spots off the map, only the nearest one left to check gets an edge arrow.
+    if (spot && !inside && !m.nearest) continue;
     seen.add(m.key);
     let el = node(m.key);
-    let inside = m.x >= box.x0 && m.x <= box.x1 && m.y >= box.y0 && m.y <= box.y1;
+    el.classList.toggle("spot", spot);
+    el.classList.toggle("checked", !!m.checked);
     let x = m.x;
     let y = m.y;
     if (!inside) {
@@ -43,12 +48,13 @@ window.markers.onUpdate((list) => {
       el.querySelector(".arrow").style.transform = `rotate(${(Math.atan2(dy, dx) * 180) / Math.PI}deg)`;
     }
     el.classList.toggle("edge", !inside);
-    el.classList.toggle("taken", m.taken);
-    el.style.setProperty("--c", COLOURS[m.look] ?? COLOURS.gold);
+    el.classList.toggle("taken", !!m.taken);
+    el.style.setProperty("--c", spot ? COLOURS.spot : (COLOURS[m.look] ?? COLOURS.gold));
     el.style.left = `${x}px`;
     el.style.top = `${y}px`;
     let label = el.querySelector(".label");
-    label.textContent = inside ? `${m.n}` : `${m.n} · ${Math.round(m.distance)} m`;
+    let name = spot ? "?" : `${m.n}`;
+    label.textContent = inside ? name : `${name} · ${Math.round(m.distance)} m`;
     // Keep the label inside the window near the right and top edges.
     label.style.left = x > w - 90 ? "-70px" : "12px";
     label.style.top = y < 30 ? "8px" : "-24px";

@@ -78,12 +78,16 @@ function render() {
   let cube = target();
   let card = $("card");
   let radar = $("radar-wrap");
-  let idle = !cube && (state.edit || state.settings.alwaysShow);
+  let waiting = !cube && state.respawns?.length > 0;
+  let idle = !cube && (waiting || state.edit || state.settings.alwaysShow);
   card.classList.toggle("idle", idle);
+  card.classList.toggle("respawn", waiting);
   if (!cube) {
     card.classList.toggle("hidden", !idle);
     radar.classList.add("hidden");
-    if (idle) renderPlaceholder();
+    $("others").textContent = "";
+    if (waiting) renderRespawn();
+    else if (idle) renderPlaceholder();
     updateSonar(undefined);
     return;
   }
@@ -136,7 +140,9 @@ function render() {
         : describeRelative(relative);
   $("rise").textContent = describeRise(cube.rise);
   $("hint").textContent = hint(cube, distance, accuracy, near);
-  $("coords").textContent = `${state.mapName ?? `Carte ${state.map ?? "?"}`} · X ${Math.round(cube.x / 100)}  Y ${Math.round(cube.y / 100)}`;
+  $("coords").textContent =
+    `${state.mapName ?? `Carte ${state.map ?? "?"}`} · X ${Math.round(cube.x / 100)}  Y ${Math.round(cube.y / 100)}` +
+    (cube.spot ? `\n${cube.spot.label} · emplacement ${cube.spot.n}/${cube.spot.of}` : "");
 
   drawRadar(cube, heading, accuracy);
   renderOthers(cube);
@@ -185,7 +191,10 @@ function describeRise(rise) {
 
 function hint(cube, distance, accuracy, near) {
   let exact = state.self?.source === "minimap";
-  if (cube.taken) return "Quelqu'un l'a ouvert.";
+  if (cube.taken)
+    return state.respawns?.length
+      ? "Ouvert. Il reviendra sur un des points bleus de la carte d'angle."
+      : "Quelqu'un l'a ouvert.";
   if (near) return exact ? "Tu y es ! Il est juste là." : "Tu y es ! Regarde autour de toi.";
   if (state.markersShown) return "Les cubes sont marqués sur la carte d'angle (en bas à droite).";
   if (!exact && state.minimap && state.minimap !== "off")
@@ -213,6 +222,24 @@ function renderPlaceholder() {
   $("badge").textContent = IDLE_STATUS[status] ?? status ?? "";
   $("age").textContent = "";
   $("hint").textContent = state.edit ? "Place-moi où tu veux voir les cubes." : (IDLE_MINIMAP[state.minimap] ?? "");
+}
+
+// A cube was opened: it comes back on one of its group's spots, drawn on the corner map.
+function renderRespawn() {
+  document.body.classList.remove("red", "near");
+  $("card").classList.remove("taken", "fresh");
+  let r = state.respawns[0];
+  $("title").textContent = "Réapparition";
+  $("badge").textContent = `${r.left}/${r.total} emplacements`;
+  $("age").textContent = formatAge(Date.now() - r.since);
+  let self = state.self;
+  let open = (state.spots ?? []).filter((s) => !s.checked);
+  let nearest = self && open.sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0];
+  let toward = nearest
+    ? ` Le plus proche : ${Math.round(metres(Math.hypot(nearest.x - self.x, nearest.y - self.y)))} m ${compassPoint(bearingNorthUp(self, nearest))}.`
+    : "";
+  $("hint").textContent =
+    `${r.label} : le cube reviendra sur un des points bleus de la carte d'angle (grisés une fois vus vides).${toward}`;
 }
 
 const IDLE_MINIMAP = {
