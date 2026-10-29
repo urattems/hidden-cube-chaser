@@ -10,7 +10,7 @@ const HEADING = {
   estimate: { windowMs: 2500, minMove: 600 },
 };
 const HEADING_HOLD_MS = 8000; // keep the last heading this long once standing still
-const SONAR_MAX_M = 80;
+const SONAR_MAX_M = 60; // about the range the server announces cubes within
 
 let state;
 let history = []; // recent self positions, for the movement heading
@@ -94,12 +94,13 @@ function render() {
   let distance = self ? metres(Math.hypot(cube.x - self.x, cube.y - self.y)) : undefined;
   let accuracy = self?.accuracy !== undefined ? metres(self.accuracy) : 0;
   let bearing = self ? bearingNorthUp(self, cube) : undefined;
-  let heading = state.settings.arrowMode === "movement" ? movementHeading() : undefined;
+  let heading = state.settings.compass && state.settings.arrowMode === "movement" ? movementHeading() : undefined;
   let relative = bearing === undefined ? undefined : heading === undefined ? bearing : wrap180(bearing - heading);
   let near = distance !== undefined && !cube.taken && distance <= Math.max(NEAR_M, accuracy);
 
   document.body.classList.toggle("red", cube.look === "red");
   document.body.classList.toggle("near", near);
+  document.body.classList.toggle("no-compass", !state.settings.compass);
   card.classList.toggle("taken", cube.taken);
   card.classList.toggle("fresh", Date.now() < freshUntil);
 
@@ -363,18 +364,31 @@ function announceNewCubes(previous) {
   }
 }
 
+// Every metre closer sounds like the same step closer: tempo and pitch move geometrically from slow
+// and low at SONAR_MAX_M to quick and high on the cube, with no jump on arrival. Walking away
+// lowers the pitch again. The distance is smoothed so the estimate's wobble does not jerk the rhythm.
+const SONAR = { slowMs: 1300, fastMs: 160, lowHz: 440, highHz: 1320, smoothMs: 600 };
+
 let sonarTimer;
-let sonarDistance;
+let sonarDistance; // smoothed
+let sonarAt;
 function updateSonar(distance) {
-  sonarDistance = state?.settings.sonar && distance !== undefined && distance <= SONAR_MAX_M ? distance : undefined;
-  if (sonarDistance !== undefined && !sonarTimer) sonarTick();
+  if (!state?.settings.sonar || distance === undefined || distance > SONAR_MAX_M) {
+    sonarDistance = undefined;
+    return;
+  }
+  let now = Date.now();
+  if (sonarDistance === undefined) sonarDistance = distance;
+  else sonarDistance += (distance - sonarDistance) * (1 - Math.exp(-(now - sonarAt) / SONAR.smoothMs));
+  sonarAt = now;
+  if (!sonarTimer) sonarTick();
 }
 
 function sonarTick() {
   sonarTimer = undefined;
   if (sonarDistance === undefined) return;
-  let close = sonarDistance <= NEAR_M;
-  tone(close ? 1480 : 1046, 0, 0.09, close ? 0.22 : 0.14);
-  let interval = close ? 180 : 180 + (Math.min(sonarDistance, SONAR_MAX_M) / SONAR_MAX_M) * 1400;
-  sonarTimer = setTimeout(sonarTick, interval);
+  let closeness = 1 - Math.min(1, sonarDistance / SONAR_MAX_M);
+  let between = (far, near) => far * (near / far) ** closeness;
+  tone(between(SONAR.lowHz, SONAR.highHz), 0, 0.08, 0.1 + 0.08 * closeness);
+  sonarTimer = setTimeout(sonarTick, between(SONAR.slowMs, SONAR.fastMs));
 }

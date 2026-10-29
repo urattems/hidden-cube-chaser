@@ -33,6 +33,7 @@ const MINIMAP_ACCURACY = 100; // cm: the reference map has about 1 px per metre
 
 const DEFAULT_SETTINGS = {
   bounds: undefined,
+  compass: false, // the dial arrow: the corner-map markers guide better than a movement heading
   arrowMode: "movement", // "north" | "movement" (north-up while standing still)
   // Exact position read from the game's corner map. region/anchor unset = Map Overlay's ones;
   // scale (reference px per screen px) and mapKey are learnt on the first fix and kept.
@@ -510,6 +511,7 @@ function rebuildTray() {
   let radio = (label, value) => ({
     label,
     type: "radio",
+    enabled: settings.compass,
     checked: settings.arrowMode === value,
     click: () => saveSettings({ arrowMode: value }),
   });
@@ -528,7 +530,7 @@ function rebuildTray() {
         },
       },
       { type: "separator" },
-      { label: "Flèche", enabled: false },
+      check("Boussole (flèche de direction)", "compass"),
       radio("Nord de la carte en haut", "north"),
       radio("Sens de déplacement (nord à l'arrêt)", "movement"),
       { type: "separator" },

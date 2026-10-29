@@ -149,6 +149,10 @@ header {
   flex: none;
 }
 
+body.no-compass .dial {
+  display: none;
+}
+
 .dial svg {
   width: 100%;
   height: 100%;

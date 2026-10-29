@@ -30,8 +30,13 @@ lue sur la carte d'angle du jeu.
   captures d'écran, sinon la lecture de la carte les confondrait avec le terrain.
 - **Plusieurs cubes** : chacun garde son numéro (Cube 1, Cube 2…) sur l'overlay, le radar et la
   carte d'angle. L'overlay vise le plus proche et liste les autres avec leur distance.
-- **La flèche** suit ta direction de déplacement (« Devant, à gauche »…) et garde la dernière
-  direction quelques secondes à l'arrêt. Sinon, elle a le nord en haut, comme la carte du jeu.
+- **Le sonar** bipe de plus en plus vite et de plus en plus aigu en approchant, régulièrement,
+  sans saut à l'arrivée : chaque mètre gagné s'entend. S'il redescend, tu t'éloignes. Il commence
+  à 60 m.
+- **La boussole** (flèche à côté de la distance) est masquée par défaut : les marqueurs de la
+  carte d'angle guident mieux. Si tu la réactives, elle suit ta direction de déplacement
+  (« Devant, à gauche »…), ou garde le nord en haut, comme la carte du jeu. Sans elle, le radar
+  et le texte de direction ont le nord en haut.
 
 ## Installation sur un autre PC
 
@@ -76,10 +81,11 @@ affiche « connexion GitHub requise ». Depuis les sources, la mise à jour se f
   - État de la capture et de la mini-carte
   - **Déplacer l'overlay**, puis **Verrouiller** une fois placé
   - **Aperçu (démo 50 s)** pour voir l'overlay sans cube
-  - **Flèche** : sens de déplacement (par défaut, nord à l'arrêt) ou nord de la carte en haut
+  - **Boussole (flèche de direction)**, puis son sens : déplacement (nord à l'arrêt) ou nord de
+    la carte en haut
   - **Lire la mini-carte (position exacte)**, **Sélectionner la zone de la mini-carte…**,
     **Reprendre la zone de Map Overlay**, **Recalibrer le zoom de la mini-carte**
-  - Son à l'apparition, sonar de proximité (bips plus rapides en approchant)
+  - Son à l'apparition, sonar de proximité (bips plus rapides et plus aigus en approchant)
   - **Visible en stream / enregistrement** : décoché par défaut, l'overlay est invisible dans
     OBS, Discord et les captures d'écran. Coche-le pour le montrer, et utilise la *Capture
     d'écran* (Display Capture) d'OBS : la *Capture de jeu* ne voit jamais les overlays.
@@ -117,5 +123,5 @@ powershell -ExecutionPolicy Bypass -File tools\build-portable.ps1   # zip portab
   ne recevra plus de données : le journal l'indiquera.
 - Position exacte et marqueur Map Overlay : Verteron (1010) et Altgard (1110), les cartes dont
   Map Overlay a les tuiles. Ailleurs, l'overlay fonctionne avec la position estimée.
-- La flèche suit ta direction de **déplacement** : en tournant la caméra sur place, elle garde ta
-  dernière direction de marche.
+- La boussole, si activée, suit ta direction de **déplacement** : en tournant la caméra sur
+  place, elle garde ta dernière direction de marche.
