@@ -81,8 +81,30 @@ async function processFrame(frame, at) {
   window.vision.report(result);
 }
 
+// A game repaints all the time: a stream that stops delivering frames has died (the game going
+// fullscreen or changing mode while starting can end it) and only shows its last, stale frame.
+const STALL_MS = 4000;
+let lastFrameAt;
+let stallReported = false;
+function watchFrames() {
+  video.requestVideoFrameCallback(() => {
+    lastFrameAt = performance.now();
+    watchFrames();
+  });
+}
+
+function stalled() {
+  let track = video.srcObject?.getVideoTracks()[0];
+  return track?.readyState === "ended" || (lastFrameAt !== undefined && performance.now() - lastFrameAt > STALL_MS);
+}
+
 async function tick() {
   if (busy || !config || video.readyState < 2) return;
+  if (stalled()) {
+    if (!stallReported) window.vision.report({ status: "stalled" });
+    stallReported = true;
+    return;
+  }
   busy = true;
   try {
     let { region } = config;
@@ -119,6 +141,7 @@ async function startCapture() {
   });
   video.srcObject = stream;
   await video.play();
+  watchFrames();
   clearInterval(timer);
   timer = setInterval(tick, FRAME_INTERVAL_MS);
 }

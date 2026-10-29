@@ -8,6 +8,7 @@ const { EventEmitter } = require("events");
 
 const MAP_OVERLAY_DIR = path.join(process.env.LOCALAPPDATA ?? "", "Aion2MapOverlayData");
 const MAPS_DIR = path.join(MAP_OVERLAY_DIR, "maps");
+const RESTART_MS = 15000;
 
 function readJson(file) {
   try {
@@ -42,6 +43,7 @@ class MinimapTracker extends EventEmitter {
     this.key = undefined;
     ipcMain.on("vision-result", (event, result) => {
       if (!this.win || event.sender !== this.win.webContents) return;
+      if (result.status === "stalled") return this.restart();
       if (result.status !== "dump") return this.emit("result", result);
       fs.writeFileSync(this.dumpPath, Buffer.from(result.png));
       this.log(`minimap frame saved to ${this.dumpPath} (stream ${result.video.join("x")})`);
@@ -54,6 +56,7 @@ class MinimapTracker extends EventEmitter {
     if (key === this.key) return;
     this.stop();
     this.key = key;
+    this.wanted = wanted;
     if (!wanted) return;
     try {
       await this.start(wanted);
@@ -96,6 +99,17 @@ class MinimapTracker extends EventEmitter {
       dump: !!this.dumpPath,
     });
     this.log(`minimap tracking ${JSON.stringify(region)} on display ${display.id} (${size.width}x${size.height})`);
+  }
+
+  // The screen capture died: start over with a fresh source, as switching the tracking off and on
+  // does. At most every RESTART_MS, so a desktop left still does not churn windows.
+  restart() {
+    if (Date.now() - (this.restartedAt ?? 0) < RESTART_MS) return;
+    this.restartedAt = Date.now();
+    this.log("minimap capture stalled, restarting it");
+    let wanted = this.wanted;
+    this.key = undefined;
+    this.update(wanted);
   }
 
   prior(prior) {
