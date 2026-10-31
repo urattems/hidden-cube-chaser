@@ -170,7 +170,7 @@ window.vision.onConfig(async (next) => {
     if (config.testFrames) await runTest();
     else await startCapture();
   } catch (e) {
-    window.vision.report({ status: "error", error: String(e) });
+    window.vision.report({ status: "capture-failed", error: String(e) });
   }
 });
 

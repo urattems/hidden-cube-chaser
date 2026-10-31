@@ -20,6 +20,7 @@ function hostProcedures(getPids) {
   return {
     pids: () => getPids(),
     uploadSettings: () => ({ automatic: false, signedIn: false }),
+    alertRegion: () => null, // Questlog 0.1.46: its in-game alert position, unused here
   };
 }
 

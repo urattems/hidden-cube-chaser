@@ -360,7 +360,7 @@ const MINIMAP_FR = {
   "no-region": "zone non choisie",
   "no-maps": "cartes de Map Overlay absentes",
   waiting: "en attente du jeu",
-  "no-prior": "en attente de la position Questlog",
+  "no-prior": "lance un buff ou une compétence pour démarrer",
   "no-map": "carte non gérée ici",
   searching: "calibrage…",
   fix: "position exacte",

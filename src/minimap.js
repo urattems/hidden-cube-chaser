@@ -43,7 +43,11 @@ class MinimapTracker extends EventEmitter {
     this.key = undefined;
     ipcMain.on("vision-result", (event, result) => {
       if (!this.win || event.sender !== this.win.webContents) return;
-      if (result.status === "stalled") return this.restart();
+      if (result.status === "stalled") return this.restart("stalled");
+      if (result.status === "capture-failed") {
+        this.emit("result", { status: "error", error: result.error });
+        return this.restart("failed to start");
+      }
       if (result.status !== "dump") return this.emit("result", result);
       fs.writeFileSync(this.dumpPath, Buffer.from(result.png));
       this.log(`minimap frame saved to ${this.dumpPath} (stream ${result.video.join("x")})`);
@@ -63,6 +67,7 @@ class MinimapTracker extends EventEmitter {
     } catch (e) {
       this.log(`minimap start failed: ${e.message}`);
       this.emit("result", { status: "error", error: e.message });
+      this.restart("failed to start");
     }
   }
 
@@ -101,12 +106,18 @@ class MinimapTracker extends EventEmitter {
     this.log(`minimap tracking ${JSON.stringify(region)} on display ${display.id} (${size.width}x${size.height})`);
   }
 
-  // The screen capture died: start over with a fresh source, as switching the tracking off and on
-  // does. At most every RESTART_MS, so a desktop left still does not churn windows.
-  restart() {
-    if (Date.now() - (this.restartedAt ?? 0) < RESTART_MS) return;
+  // The screen capture died or would not start: start over with a fresh source, as switching the
+  // tracking off and on does. At most every RESTART_MS, so a desktop left still does not churn
+  // windows; a request sooner than that waits its turn, since nothing else would ask again.
+  restart(reason) {
+    let wait = (this.restartedAt ?? 0) + RESTART_MS - Date.now();
+    clearTimeout(this.retry);
+    if (wait > 0) {
+      this.retry = setTimeout(() => this.restart(reason), wait);
+      return;
+    }
     this.restartedAt = Date.now();
-    this.log("minimap capture stalled, restarting it");
+    this.log(`minimap capture ${reason}, restarting it`);
     let wanted = this.wanted;
     this.key = undefined;
     this.update(wanted);
@@ -117,6 +128,7 @@ class MinimapTracker extends EventEmitter {
   }
 
   stop() {
+    clearTimeout(this.retry);
     this.win?.destroy();
     this.win = undefined;
     this.key = undefined;

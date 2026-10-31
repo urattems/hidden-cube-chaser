@@ -197,6 +197,7 @@ function hint(cube, distance, accuracy, near) {
       : "Quelqu'un l'a ouvert.";
   if (near) return exact ? "Tu y es ! Il est juste là." : "Tu y es ! Regarde autour de toi.";
   if (state.markersShown) return "Les cubes sont marqués sur la carte d'angle (en bas à droite).";
+  if (state.minimap === "no-prior") return "Lance un buff ou une compétence : Chaser a besoin d'une première position.";
   if (!exact && state.minimap && state.minimap !== "off")
     return "Ouvre la carte d'angle du jeu (en bas à droite) : les cubes y seront marqués exactement.";
   if (accuracy >= 15) return "Position approximative : lance un buff ou une compétence pour la recaler.";
@@ -247,7 +248,7 @@ const IDLE_MINIMAP = {
   searching: "Mini-carte : calibrage…",
   lost: "Mini-carte : non trouvée (cachée ?)",
   "no-region": "Mini-carte : choisis sa zone dans le menu",
-  "no-prior": "Mini-carte : en attente de ta position",
+  "no-prior": "Mini-carte : lance un buff ou une compétence pour démarrer",
   "no-map": "Mini-carte : carte non gérée ici",
 };
 
