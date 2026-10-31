@@ -1,7 +1,7 @@
 {
   "name": "hidden-cube-chaser",
   "productName": "Hidden Cube Chaser",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Overlay Aion 2 : flèche, distance et radar vers les cubes cachés, alimenté par le worker de Questlog (sans le modifier).",
   "main": "src/main.js",
   "private": true,

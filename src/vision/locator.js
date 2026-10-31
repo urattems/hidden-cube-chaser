@@ -45,6 +45,7 @@
       this.last = undefined; // { x, y, at } of the last fix, world cm
       this.misses = 0;
       this.lastRescale = 0;
+      this.turn = 0; // which map this frame tries while the map is not settled
     }
 
     // frame: { data: Float32Array gray, w, h } of the selected region at screen resolution.
@@ -52,7 +53,7 @@
     async locate(frame, prior, anchor = { x: 0.5, y: 0.5 }, now = Date.now()) {
       let guess = this.guess(prior, now);
       if (!guess) return { status: "no-prior" };
-      let keys = this.candidateKeys(prior);
+      let keys = this.candidateKeys(prior, now);
       if (!keys.length) return { status: "no-map" };
 
       let crop = this.templateCrop(frame);
@@ -74,17 +75,16 @@
         keys = [found.mapKey];
       }
 
-      let best;
-      for (let key of keys) {
-        let fix = await this.match(crop, frame, anchor, guess, key, this.scale, 1);
-        if (fix && (!best || fix.score > best.score)) best = { ...fix, mapKey: key };
-      }
+      // With no settled map, one map per frame: both at once would double the cost of every frame
+      // for as long as the corner map stays closed.
+      let mapKey = keys[this.turn++ % keys.length];
+      let best = await this.match(crop, frame, anchor, guess, mapKey, this.scale, 1);
       if (!best || !best.accepted) {
         this.misses++;
         return { status: "lost", score: best?.score, patches: best?.patches };
       }
       this.misses = 0;
-      this.mapKey = best.mapKey;
+      this.mapKey = mapKey;
       if (!this.last || now - this.last.at > 3000) {
         let p = this.pending;
         this.pending = { x: best.x, y: best.y, at: now };
@@ -101,7 +101,7 @@
         score: best.score,
         patches: best.patches,
         scale: this.scale,
-        mapKey: best.mapKey,
+        mapKey,
       };
     }
 
@@ -116,12 +116,14 @@
       return { x: prior.x, y: prior.y, radius: Math.min(120, Math.max(30, accuracy * 1.5 + 20)) };
     }
 
-    candidateKeys(prior) {
+    candidateKeys(prior, now) {
       if (prior?.map !== undefined && prior.map !== null) {
         let known = MAP_KEYS[prior.map];
         return known ? [known] : []; // a dungeon or another region: no reference to match
       }
-      if (this.mapKey) return [this.mapKey];
+      // Questlog only learns the map on a zone change, which can take minutes after logging in, and
+      // the character may have changed side since the last session: only a live fix settles the map.
+      if (this.mapKey && this.last && now - this.last.at < 3000) return [this.mapKey];
       return Object.values(MAP_KEYS);
     }
 
@@ -211,25 +213,33 @@
 
     // The corner map's zoom: try a range of scales coarsely, then refine around the best.
     async findScale(crop, frame, anchor, guess, keys) {
+      // Each map gets its own full check: a wrong map's lucky coarse score must not hide the right one.
+      for (let key of keys) {
+        let found = await this.findScaleOn(crop, frame, anchor, guess, key);
+        if (found) return found;
+      }
+      return undefined;
+    }
+
+    async findScaleOn(crop, frame, anchor, guess, mapKey) {
       let wide = { ...guess, radius: Math.max(guess.radius, 40) };
       let best;
-      for (let key of keys)
-        for (let s = SCALE_MIN; s <= SCALE_MAX + 1e-9; s += 0.04) {
-          let fix = await this.match(crop, frame, anchor, wide, key, s, 4);
-          if (fix && (!best || fix.score > best.score)) best = { ...fix, scale: s, mapKey: key };
-        }
+      for (let s = SCALE_MIN; s <= SCALE_MAX + 1e-9; s += 0.04) {
+        let fix = await this.match(crop, frame, anchor, wide, mapKey, s, 4);
+        if (fix && (!best || fix.score > best.score)) best = { ...fix, scale: s };
+      }
       if (!best || best.score < 0.3) return undefined;
       let refined = best;
       for (let s = best.scale - 0.04; s <= best.scale + 0.04 + 1e-9; s += 0.01) {
         if (s < SCALE_MIN * 0.8) continue;
-        let fix = await this.match(crop, frame, anchor, { x: best.x, y: best.y, radius: 12 }, best.mapKey, s, 2);
-        if (fix && fix.score > refined.score) refined = { ...fix, scale: s, mapKey: best.mapKey };
+        let fix = await this.match(crop, frame, anchor, { x: best.x, y: best.y, radius: 12 }, mapKey, s, 2);
+        if (fix && fix.score > refined.score) refined = { ...fix, scale: s };
       }
       // A calibration is kept for the session, so it must be beyond doubt: a strong whole-frame
       // score and most patches agreeing (a dark cave floor can otherwise pass for terrain).
-      let check = await this.match(crop, frame, anchor, { x: refined.x, y: refined.y, radius: 6 }, refined.mapKey, refined.scale, 1);
+      let check = await this.match(crop, frame, anchor, { x: refined.x, y: refined.y, radius: 6 }, mapKey, refined.scale, 1);
       let calibrated = check && check.score >= CALIBRATE && check.patchesAgree >= CALIBRATE_PATCHES;
-      return calibrated ? { scale: refined.scale, mapKey: refined.mapKey } : undefined;
+      return calibrated ? { scale: refined.scale, mapKey } : undefined;
     }
   }
 

@@ -133,6 +133,10 @@ powershell -ExecutionPolicy Bypass -File tools\build-portable.ps1   # zip portab
 - Si une mise à jour de Questlog renomme ses abonnements (`hiddenCubes`, `map.positions`), Chaser
   ne recevra plus de données : le journal l'indiquera.
 - Position exacte et marqueur Map Overlay : Verteron (1010) et Altgard (1110), les cartes dont
-  Map Overlay a les tuiles. Ailleurs, l'overlay fonctionne avec la position estimée.
+  Map Overlay a les tuiles. Ailleurs (Eltnen, Morheim…), l'overlay fonctionne avec la position
+  estimée. Tant que Questlog ne connaît pas la carte (après un lancement, jusqu'au premier
+  changement de zone), Chaser essaie Verteron et Altgard tour à tour.
+- La position exacte part de l'estimation de Questlog : si celle-ci est trop fausse, la carte
+  d'angle n'est pas trouvée. Un buff ou une compétence la recale.
 - La boussole, si activée, suit ta direction de **déplacement** : en tournant la caméra sur
   place, elle garde ta dernière direction de marche.
