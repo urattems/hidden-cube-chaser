@@ -22,15 +22,19 @@
   const PATCH_SLACK = 3; // px each patch may move from the whole-frame answer
   const CALIBRATE = 0.55;
   const CALIBRATE_PATCHES = 7;
+  const CALIBRATE_REFINED = 0.45; // below this at half resolution, the costly last pass is not worth it
+  // Reference px per screen px: the same in-game zoom gives a higher value on a smaller screen
+  // (0.75 at 1440p is 1.0 at 1080p), and zooming out raises it further (1.415 seen at 1080p).
   const SCALE_MIN = 0.3;
-  const SCALE_MAX = 1.2;
+  const SCALE_MAX = 3;
+  const SCALE_STEP = 1.05;
   // Dungeons and caves draw a near-black corner map (mean ~10 against ~150 outdoors): nothing to match.
   const DARK_MAP = 50;
   // After losing track, a fix is only reported once a second frame lands at the same place.
   const CONFIRM_MS = 2500;
   const CONFIRM_SLACK = 300; // cm, plus 12 m/s of movement
   const MISSES_BEFORE_RESCALE = 8;
-  const RESCALE_COOLDOWN_MS = 15000;
+  const RESCALE_COOLDOWN_MS = 8000;
   const UNKNOWN_SCALE_RETRY_MS = 3000;
 
   const toRef = (cm) => cm * K + CENTER;
@@ -224,26 +228,35 @@
     async findScaleOn(crop, frame, anchor, guess, mapKey) {
       let wide = { ...guess, radius: Math.max(guess.radius, 40) };
       let best;
-      for (let s = SCALE_MIN; s <= SCALE_MAX + 1e-9; s += 0.04) {
+      for (let s = SCALE_MIN; s <= SCALE_MAX + 1e-9; s *= SCALE_STEP) {
         let fix = await this.match(crop, frame, anchor, wide, mapKey, s, 4);
         if (fix && (!best || fix.score > best.score)) best = { ...fix, scale: s };
       }
       if (!best || best.score < 0.3) return undefined;
       let refined = best;
-      for (let s = best.scale - 0.04; s <= best.scale + 0.04 + 1e-9; s += 0.01) {
+      let span = best.scale * (SCALE_STEP - 1);
+      for (let s = best.scale - span; s <= best.scale + span + 1e-9; s += span / 4) {
         if (s < SCALE_MIN * 0.8) continue;
         let fix = await this.match(crop, frame, anchor, { x: best.x, y: best.y, radius: 12 }, mapKey, s, 2);
         if (fix && fix.score > refined.score) refined = { ...fix, scale: s };
       }
+      if (refined.score < CALIBRATE_REFINED) return undefined;
+      // Last pass at full resolution: 1 % of zoom already moves the frame's edges by more than the
+      // few px a patch may move, so a zoom this close to right still fails the patch vote.
+      let check;
+      let fine = span / 4;
+      for (let s = refined.scale - fine; s <= refined.scale + fine + 1e-9; s += fine / 4) {
+        let fix = await this.match(crop, frame, anchor, { x: refined.x, y: refined.y, radius: 6 }, mapKey, s, 1);
+        if (fix && (!check || fix.score > check.score)) check = { ...fix, scale: s };
+      }
       // A calibration is kept for the session, so it must be beyond doubt: a strong whole-frame
       // score and most patches agreeing (a dark cave floor can otherwise pass for terrain).
-      let check = await this.match(crop, frame, anchor, { x: refined.x, y: refined.y, radius: 6 }, mapKey, refined.scale, 1);
       let calibrated = check && check.score >= CALIBRATE && check.patchesAgree >= CALIBRATE_PATCHES;
-      return calibrated ? { scale: refined.scale, mapKey } : undefined;
+      return calibrated ? { scale: check.scale, mapKey } : undefined;
     }
   }
 
-  const api = { MinimapLocator, MAP_KEYS, toRef, toWorld };
+  const api = { MinimapLocator, MAP_KEYS, SCALE_MIN, SCALE_MAX, toRef, toWorld };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.MinimapLocatorLib = api;
 })(typeof self !== "undefined" ? self : globalThis);

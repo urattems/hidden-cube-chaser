@@ -7,6 +7,7 @@ const { MAPS } = require("./geometry");
 const { MinimapTracker, mapOverlayRegion, mapsAvailable, pickRegion } = require("./minimap");
 const { Updater } = require("./updater");
 const { locateCube, groupSpots } = require("./cube-spots");
+const { SCALE_MIN, SCALE_MAX } = require("./vision/locator");
 
 app.setName("Hidden Cube Chaser");
 app.setAppUserModelId("Hidden Cube Chaser"); // Windows shows no notifications for an app without one
@@ -399,7 +400,7 @@ function updateMinimap() {
     return;
   }
   // Calibrations saved by older versions could fall outside the zoom range the locator accepts.
-  let scale = settings.minimap.scale >= 0.3 && settings.minimap.scale <= 1.2 ? settings.minimap.scale : undefined;
+  let scale = settings.minimap.scale >= SCALE_MIN && settings.minimap.scale <= SCALE_MAX ? settings.minimap.scale : undefined;
   minimap.update({ ...chosen, scale, mapKey: settings.minimap.mapKey });
 }
 
@@ -423,7 +424,8 @@ async function chooseMinimapRegion() {
   let region = await pickRegion();
   if (!region) return;
   log(`minimap region chosen: ${JSON.stringify(region)}`);
-  saveMinimap({ region, anchor: { x: 0.5, y: 0.5 }, scale: undefined });
+  // The zoom stays: it does not depend on the region, and a wrong one recalibrates after a few misses.
+  saveMinimap({ region, anchor: { x: 0.5, y: 0.5 } });
 }
 
 // --- updates --------------------------------------------------------------------------------
@@ -636,7 +638,7 @@ function rebuildTray() {
       {
         label: "Reprendre la zone de Map Overlay",
         enabled: !!settings.minimap.region && !!mapOverlayRegion(),
-        click: () => saveMinimap({ region: undefined, anchor: undefined, scale: undefined }),
+        click: () => saveMinimap({ region: undefined, anchor: undefined }),
       },
       {
         label: "Recalibrer le zoom de la mini-carte",
