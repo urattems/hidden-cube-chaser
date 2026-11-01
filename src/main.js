@@ -8,6 +8,7 @@ const { MinimapTracker, mapOverlayRegion, mapsAvailable, pickRegion } = require(
 const { Updater } = require("./updater");
 const { locateCube, groupSpots } = require("./cube-spots");
 const { SCALE_MIN, SCALE_MAX } = require("./vision/locator");
+const { CubeTrace } = require("./cube-trace");
 
 app.setName("Hidden Cube Chaser");
 app.setAppUserModelId("Hidden Cube Chaser"); // Windows shows no notifications for an app without one
@@ -117,6 +118,8 @@ let editMode = false;
 let demo;
 
 // The corner map's exact fix while fresh, else Questlog's estimate.
+const cubeTrace = new CubeTrace(log);
+
 function fusedSelf(estimate) {
   let fix = live.minimap.fix;
   if (fix && Date.now() - fix.at < MINIMAP_FRESH_MS)
@@ -333,11 +336,11 @@ function updateMarkers(state) {
     let spots = (state.spots ?? []).map((s) => ({ key: s.key, kind: "spot", checked: s.checked, ...place(s) }));
     let nearest = spots.filter((s) => !s.checked).sort((a, b) => a.distance - b.distance)[0];
     if (nearest) nearest.nearest = true;
-    list = spots.concat(
-      state.cubes
-        .filter((c) => Number.isFinite(c.x))
-        .map((c) => ({ key: c.key, kind: "cube", n: c.n, look: c.look, taken: c.taken, ...place(c) })),
-    );
+    let cubes = state.cubes
+      .filter((c) => Number.isFinite(c.x))
+      .map((c) => ({ key: c.key, kind: "cube", n: c.n, look: c.look, taken: c.taken, ...place(c) }));
+    for (let c of cubes) cubeTrace.drawn(c.key, c.distance);
+    list = spots.concat(cubes);
   }
   markersWin.webContents.send("markers", list);
   if (list.length && !markersWin.isVisible()) markersWin.showInactive();
@@ -405,6 +408,7 @@ function updateMinimap() {
 }
 
 minimap.on("result", (r) => {
+  cubeTrace.vision(r, live.positions?.self);
   if (r.status === "fix") {
     live.minimap.fix = { x: r.x, y: r.y, at: r.at };
     live.minimap.mapKey = r.mapKey;
@@ -689,7 +693,7 @@ function loginItemOptions() {
 
 let worker;
 app.whenReady().then(() => {
-  log(`starting, electron ${process.versions.electron}`);
+  log(`starting ${app.getVersion()}, electron ${process.versions.electron}`);
   // Start with Windows like Questlog does, once; the tray menu turns it off for good.
   if (!settings.loginItemInitialized) {
     app.setLoginItemSettings({ ...loginItemOptions(), openAtLogin: true });
@@ -730,7 +734,8 @@ app.whenReady().then(() => {
       rebuildTray();
     } else if (procedurePath === "hiddenCubes") {
       let before = new Set(live.cubes.map((c) => c.id));
-      for (let c of data) if (!before.has(c.id)) log(`cube ${c.look} ${c.id} spawned=${c.spawned}`);
+      for (let c of data) if (!before.has(c.id)) log(`cube ${c.look} ${c.id} spawned=${c.spawned} minimap=${live.minimap.status}`);
+      cubeTrace.update(data);
       live.cubes = data;
       rebuildTray();
     } else if (procedurePath === "map.positions") {
