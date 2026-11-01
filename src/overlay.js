@@ -1,27 +1,13 @@
-const { bearingNorthUp, wrap180, compassPoint } = window.Geometry;
-
 const $ = (id) => document.getElementById(id);
-const LOOK_FR = { gold: "OR", red: "ROUGE" };
-const NEAR_M = 6;
-// Travel needed before the movement gives a heading: short with the corner map's exact track,
-// longer on Questlog's estimate, which wanders by metres.
-const HEADING = {
-  minimap: { windowMs: 1500, minMove: 250 },
-  estimate: { windowMs: 2500, minMove: 600 },
-};
-const HEADING_HOLD_MS = 8000; // keep the last heading this long once standing still
-const SONAR_MAX_M = 60; // about the range the server announces cubes within
+const LOOK_FR = { gold: "or", red: "rouge" };
 
 let state;
-let history = []; // recent self positions, for the movement heading
-let arrowAngle = 0; // unwrapped, so the CSS transition never spins the long way round
 let seen = new Set();
 let freshUntil = 0;
 
 window.chaser.onState((next) => {
   let previous = state;
   state = next;
-  trackHistory();
   announceNewCubes(previous);
   render();
 });
@@ -34,346 +20,98 @@ function metres(units) {
   return units / 100;
 }
 
-function trackHistory() {
+function distanceTo(point) {
   let self = state.self;
-  if (!self) return;
-  let last = history.at(-1);
-  // A switch between the exact track and the estimate jumps by metres: start the history over.
-  if (last && last.source !== self.source) history = [];
-  last = history.at(-1);
-  if (!last || last.x !== self.x || last.y !== self.y)
-    history.push({ x: self.x, y: self.y, t: Date.now(), source: self.source });
-  let cutoff = Date.now() - 6000;
-  history = history.filter((p) => p.t >= cutoff);
+  return self ? metres(Math.hypot(point.x - self.x, point.y - self.y)) : undefined;
 }
 
-// Bearing of travel over the last second or two; held a few seconds once standing still.
-let heldHeading;
-function movementHeading() {
-  let now = history.at(-1);
-  let rule = HEADING[now?.source] ?? HEADING.estimate;
-  let from = now && history.find((p) => now.t - p.t <= rule.windowMs);
-  if (from && Math.hypot(now.x - from.x, now.y - from.y) >= rule.minMove)
-    heldHeading = { bearing: bearingNorthUp(from, now), at: Date.now() };
-  return heldHeading && Date.now() - heldHeading.at < HEADING_HOLD_MS ? heldHeading.bearing : undefined;
-}
-
-function target() {
-  let cubes = state.cubes ?? [];
-  let self = state.self;
-  let open = cubes.filter((c) => !c.taken && Number.isFinite(c.x));
-  let byDistance = (a, b) => (self ? Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y) : 0);
-  return open.sort(byDistance)[0] ?? cubes.findLast((c) => c.taken);
-}
-
-function formatAge(ms) {
-  let s = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+// Open cubes first, the nearest on top; the sonar follows the first one.
+function sortedCubes() {
+  let cubes = (state.cubes ?? []).filter((c) => Number.isFinite(c.x));
+  let rank = (c) => (c.taken ? Infinity : (distanceTo(c) ?? 0));
+  return cubes.sort((a, b) => rank(a) - rank(b));
 }
 
 // --- rendering ------------------------------------------------------------------------------
 
-function render() {
-  document.body.classList.toggle("edit", !!state.edit);
-  let cube = target();
-  let card = $("card");
-  let radar = $("radar-wrap");
-  let waiting = !cube && state.respawns?.length > 0;
-  let idle = !cube && (waiting || state.edit || state.settings.alwaysShow);
-  card.classList.toggle("idle", idle);
-  card.classList.toggle("respawn", waiting);
-  if (!cube) {
-    card.classList.toggle("hidden", !idle);
-    radar.classList.add("hidden");
-    $("others").textContent = "";
-    if (waiting) renderRespawn();
-    else if (idle) renderPlaceholder();
-    updateSonar(undefined);
-    return;
-  }
-  card.classList.remove("hidden");
-  radar.classList.remove("hidden");
+const CAPTURE_PROBLEM = {
+  "no-npcap": "Npcap n'est pas installé",
+  "npcap-stopped": "Le service Npcap est arrêté",
+  "npcap-admin-only": "Npcap exige l'administrateur",
+  "no-questlog": "Questlog introuvable",
+  "worker-restarting": "Redémarrage du décodeur…",
+  error: "Erreur de capture",
+};
 
-  let self = state.self;
-  let distance = self ? metres(Math.hypot(cube.x - self.x, cube.y - self.y)) : undefined;
-  let accuracy = self?.accuracy !== undefined ? metres(self.accuracy) : 0;
-  let bearing = self ? bearingNorthUp(self, cube) : undefined;
-  let heading = state.settings.compass && state.settings.arrowMode === "movement" ? movementHeading() : undefined;
-  let relative = bearing === undefined ? undefined : heading === undefined ? bearing : wrap180(bearing - heading);
-  let near = distance !== undefined && !cube.taken && distance <= Math.max(NEAR_M, accuracy);
+const MAP_STATUS = {
+  searching: ["wait", "Carte : recherche…"],
+  lost: ["bad", "Carte non lue (fermée ou cachée ?)"],
+  "no-map": ["bad", "Carte non lue (cachée ou zone sombre ?)"],
+  "no-prior": ["wait", "Carte : lance un buff pour démarrer"],
+  "no-region": ["bad", "Carte : choisis sa zone dans le menu"],
+  "no-maps": ["bad", "Carte : tuiles de Map Overlay absentes"],
+  waiting: ["wait", "En attente d'Aion 2"],
+  off: ["off", "Lecture de la carte désactivée"],
+  error: ["bad", "Carte : erreur de lecture"],
+};
 
-  document.body.classList.toggle("red", cube.look === "red");
-  document.body.classList.toggle("near", near);
-  document.body.classList.toggle("no-compass", !state.settings.compass);
-  card.classList.toggle("taken", cube.taken);
-  card.classList.toggle("fresh", Date.now() < freshUntil);
-
-  $("title").textContent = `Cube ${cube.n ?? ""} · ${LOOK_FR[cube.look] ?? ""}`;
-  $("badge").textContent = cube.taken ? "Ouvert par quelqu'un" : cube.spawned ? "Vient d'apparaître" : "Déjà là";
-  $("age").textContent = cube.since ? formatAge(Date.now() - cube.since) : "";
-
-  if (relative !== undefined) {
-    arrowAngle += wrap180(relative - arrowAngle);
-    $("arrow").style.transform = `rotate(${arrowAngle}deg)`;
-  }
-  $("cone").setAttribute("d", distance === undefined || cube.taken ? "" : conePath(distance, accuracy));
-  $("dial-label").textContent = heading === undefined ? "N" : "▲";
-
-  if (distance === undefined) {
-    $("distance").textContent = "?";
-    $("accuracy").textContent = "position inconnue";
-  } else {
-    let shown = distance < 10 ? distance.toFixed(0) : Math.round(distance);
-    $("distance").innerHTML = `${accuracy >= 5 ? "≈" : ""}${shown}<small> m</small>`;
-    $("accuracy").textContent =
-      self.source === "minimap"
-        ? "position exacte (mini-carte)"
-        : accuracy >= 5
-          ? `± ${Math.round(accuracy)} m (position estimée)`
-          : "position précise";
-  }
-  $("direction").textContent =
-    bearing === undefined
-      ? ""
-      : heading === undefined
-        ? `Vers le ${compassPoint(bearing)} (nord en haut)`
-        : describeRelative(relative);
-  $("rise").textContent = describeRise(cube.rise);
-  $("hint").textContent = hint(cube, distance, accuracy, near);
-  $("coords").textContent =
-    `${state.mapName ?? `Carte ${state.map ?? "?"}`} · X ${Math.round(cube.x / 100)}  Y ${Math.round(cube.y / 100)}` +
-    (cube.spot ? `\n${cube.spot.label} · emplacement ${cube.spot.n}/${cube.spot.of}` : "");
-
-  drawRadar(cube, heading, accuracy);
-  renderOthers(cube);
-  updateSonar(cube.taken ? undefined : distance);
+// Green holds exactly while the markers can be drawn: the position comes from a fresh corner-map fix.
+function mapStatus() {
+  if (state.edit && !state.game) return ["off", "Place-moi où tu veux"];
+  let problem = CAPTURE_PROBLEM[state.status?.state];
+  if (problem) return ["bad", problem];
+  if (state.self?.source === "minimap") return ["good", "Carte OK"];
+  return MAP_STATUS[state.minimap] ?? ["wait", "Carte : recherche…"];
 }
 
-// Every other cube on one line each: its number, colour, distance and direction.
-function renderOthers(focus) {
-  let self = state.self;
-  let lines = (state.cubes ?? [])
-    .filter((c) => c !== focus && !c.taken && Number.isFinite(c.x))
-    .map((c) => {
-      if (!self) return `Cube ${c.n} · ${LOOK_FR[c.look]?.toLowerCase() ?? ""}`;
-      let d = Math.round(metres(Math.hypot(c.x - self.x, c.y - self.y)));
-      return `Cube ${c.n} · ${LOOK_FR[c.look]?.toLowerCase() ?? ""} · ${d} m ${compassPoint(bearingNorthUp(self, c))}`;
-    });
-  $("others").textContent = lines.join("\n");
-}
-
-// The directions the cube can really be in, given how far off our own position may be: a thin
-// beam right after a buff fixes the position, a wide fan while it is only estimated.
-const CONE_MIN_DEG = 4;
-const CONE_MAX_DEG = 90;
-const CONE_RADIUS = 52;
-
-function conePath(distance, accuracy) {
-  let half = distance > 0 ? (Math.atan2(accuracy, distance) * 180) / Math.PI : CONE_MAX_DEG;
-  half = (Math.min(CONE_MAX_DEG, Math.max(CONE_MIN_DEG, half)) * Math.PI) / 180;
-  let x = (CONE_RADIUS * Math.sin(half)).toFixed(1);
-  let y = (-CONE_RADIUS * Math.cos(half)).toFixed(1);
-  return `M0,0 L-${x},${y} A${CONE_RADIUS},${CONE_RADIUS} 0 0 1 ${x},${y} Z`;
-}
-
-function describeRelative(angle) {
-  let a = Math.abs(angle);
-  if (a < 20) return "Droit devant";
-  if (a > 160) return "Derrière toi";
-  let side = angle > 0 ? "à droite" : "à gauche";
-  return a < 70 ? `Devant, ${side}` : a < 110 ? `Sur ta ${side.slice(2)}` : `Derrière, ${side}`;
+function cubeLine(cube) {
+  let name = `Cube ${cube.n ?? ""} ${LOOK_FR[cube.look] ?? ""}`.trim();
+  if (cube.taken) return `${name} · ouvert`;
+  let distance = distanceTo(cube);
+  if (distance === undefined) return name;
+  let approximate = state.self.source !== "minimap";
+  return `${name} · ${approximate ? "≈" : ""}${Math.round(distance)} m${describeRise(cube.rise)}`;
 }
 
 function describeRise(rise) {
   if (rise === undefined || Math.abs(rise) < 2) return "";
-  return rise > 0 ? `▲ ${rise} m plus haut` : `▼ ${-rise} m plus bas`;
+  return rise > 0 ? ` · ▲ ${rise} m` : ` · ▼ ${-rise} m`;
 }
 
-function hint(cube, distance, accuracy, near) {
-  let exact = state.self?.source === "minimap";
-  if (cube.taken)
-    return state.respawns?.length
-      ? "Ouvert. Il reviendra sur un des points bleus de la carte d'angle."
-      : "Quelqu'un l'a ouvert.";
-  if (near) return exact ? "Tu y es ! Il est juste là." : "Tu y es ! Regarde autour de toi.";
-  if (state.markersShown) return "Les cubes sont marqués sur la carte d'angle (en bas à droite).";
-  if (state.minimap === "no-prior") return "Lance un buff ou une compétence : Chaser a besoin d'une première position.";
-  if (!exact && state.minimap && state.minimap !== "off")
-    return "Ouvre la carte d'angle du jeu (en bas à droite) : les cubes y seront marqués exactement.";
-  if (accuracy >= 15) return "Position approximative : lance un buff ou une compétence pour la recaler.";
-  if (!exact && distance !== undefined && distance < 25) return "Tout proche. Le marqueur exact est sur la carte (Map Overlay).";
-  return "";
-}
+function render() {
+  document.body.classList.toggle("edit", !!state.edit);
+  let [level, text] = mapStatus();
+  $("card").className = `card ${level}${Date.now() < freshUntil ? " fresh" : ""}`;
+  $("status").textContent = text;
 
-const IDLE_STATUS = {
-  capturing: "Aucun cube à portée",
-  "waiting-for-game": "En attente d'Aion 2",
-  starting: "Démarrage…",
-  "worker-restarting": "Redémarrage du décodeur…",
-  "no-npcap": "Npcap n'est pas installé",
-  "no-questlog": "Questlog introuvable",
-  error: "Erreur de capture",
-};
+  let cubes = sortedCubes();
+  let lines = cubes.map((c) => ({ text: cubeLine(c), look: c.look, taken: c.taken }));
+  for (let r of state.respawns ?? []) lines.push({ text: `Réapparition · ${r.label} · ${r.left}/${r.total}`, look: "respawn" });
+  $("cubes").replaceChildren(
+    ...lines.map((line) => {
+      let el = document.createElement("div");
+      el.className = `cube ${line.look ?? ""}${line.taken ? " taken" : ""}`;
+      el.textContent = line.text;
+      return el;
+    }),
+  );
 
-function renderPlaceholder() {
-  document.body.classList.remove("red", "near");
-  $("card").classList.remove("taken", "fresh");
-  let status = state.status?.state;
-  $("title").textContent = "Hidden Cube Chaser";
-  $("badge").textContent = IDLE_STATUS[status] ?? status ?? "";
-  $("age").textContent = "";
-  $("hint").textContent = state.edit ? "Place-moi où tu veux voir les cubes." : (IDLE_MINIMAP[state.minimap] ?? "");
-}
-
-// A cube was opened: it comes back on one of its group's spots, drawn on the corner map.
-function renderRespawn() {
-  document.body.classList.remove("red", "near");
-  $("card").classList.remove("taken", "fresh");
-  let r = state.respawns[0];
-  $("title").textContent = "Réapparition";
-  $("badge").textContent = `${r.left}/${r.total} emplacements`;
-  $("age").textContent = formatAge(Date.now() - r.since);
-  let self = state.self;
-  let open = (state.spots ?? []).filter((s) => !s.checked);
-  let nearest = self && open.sort((a, b) => Math.hypot(a.x - self.x, a.y - self.y) - Math.hypot(b.x - self.x, b.y - self.y))[0];
-  let toward = nearest
-    ? ` Le plus proche : ${Math.round(metres(Math.hypot(nearest.x - self.x, nearest.y - self.y)))} m ${compassPoint(bearingNorthUp(self, nearest))}.`
-    : "";
-  $("hint").textContent =
-    `${r.label} : le cube reviendra sur un des points bleus de la carte d'angle (grisés une fois vus vides).${toward}`;
-}
-
-const IDLE_MINIMAP = {
-  fix: "Mini-carte : position exacte ✓",
-  searching: "Mini-carte : calibrage…",
-  lost: "Mini-carte : non trouvée (cachée ?)",
-  "no-region": "Mini-carte : choisis sa zone dans le menu",
-  "no-prior": "Mini-carte : lance un buff ou une compétence pour démarrer",
-  "no-map": "Mini-carte : carte non gérée ici",
-};
-
-// --- radar ------------------------------------------------------------------------------------
-
-function niceRange(m) {
-  for (let r of [20, 30, 50, 80, 120, 200, 300, 500]) if (m <= r) return r;
-  return 800;
-}
-
-function drawRadar(focus, heading, accuracy) {
-  let canvas = $("radar");
-  let ctx = canvas.getContext("2d");
-  let size = canvas.width;
-  let c = size / 2;
-  let radius = c - 14;
-  let self = state.self;
-  let css = getComputedStyle(document.body);
-  let accent = css.getPropertyValue("--accent").trim();
-  ctx.clearRect(0, 0, size, size);
-
-  ctx.fillStyle = "rgba(14,16,22,0.72)";
-  ctx.beginPath();
-  ctx.arc(c, c, radius + 10, 0, Math.PI * 2);
-  ctx.fill();
-
-  // The scale follows the focused cube; farther ones are pinned to the rim with their distance.
-  let cubes = (state.cubes ?? []).filter((cube) => Number.isFinite(cube.x));
-  let focusDistance = self ? metres(Math.hypot(focus.x - self.x, focus.y - self.y)) : 0;
-  let range = niceRange(Math.max(focusDistance * 1.3, 15));
-  let scale = radius / range;
-  let rotation = heading === undefined ? 0 : -heading;
-
-  ctx.strokeStyle = "rgba(255,255,255,0.13)";
-  ctx.lineWidth = 2;
-  for (let f of [0.5, 1]) {
-    ctx.beginPath();
-    ctx.arc(c, c, radius * f, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  // Ring labels on the lower-right diagonal, clear of the north tick.
-  ctx.fillStyle = "rgba(255,255,255,0.45)";
-  ctx.font = "600 18px Segoe UI";
-  ctx.textAlign = "center";
-  for (let f of [0.5, 1]) {
-    let at = radius * f * Math.SQRT1_2;
-    ctx.fillText(f === 1 ? `${range} m` : `${range / 2}`, c + at - 14, c + at - 6);
-  }
-
-  // North tick, turning with the radar when it follows the movement heading.
-  let n = ((rotation - 90) * Math.PI) / 180;
-  ctx.fillStyle = "rgba(255,255,255,0.8)";
-  ctx.font = "700 22px Segoe UI";
-  ctx.fillText("N", c + Math.cos(n) * (radius - 2), c + Math.sin(n) * (radius - 2) + 8);
-
-  if (self && accuracy >= 2) {
-    ctx.fillStyle = "rgba(255,255,255,0.07)";
-    ctx.beginPath();
-    ctx.arc(c, c, Math.min(radius, accuracy * scale), 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  if (self) {
-    for (let cube of cubes) {
-      let d = Math.hypot(cube.x - self.x, cube.y - self.y) / 100;
-      let a = ((bearingNorthUp(self, cube) + rotation - 90) * Math.PI) / 180;
-      let r = Math.min(radius, d * scale);
-      let x = c + Math.cos(a) * r;
-      let y = c + Math.sin(a) * r;
-      let colour = cube.taken ? "#6b7280" : cube.look === "red" ? "#ff5252" : "#f5b91a";
-      if (cube === focus && !cube.taken) {
-        ctx.strokeStyle = accent;
-        ctx.setLineDash([6, 8]);
-        ctx.beginPath();
-        ctx.moveTo(c, c);
-        ctx.lineTo(x, y);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(Math.PI / 4);
-      ctx.shadowColor = colour;
-      ctx.shadowBlur = cube === focus ? 18 : 6;
-      ctx.fillStyle = colour;
-      let s = cube === focus ? 15 : 10;
-      ctx.fillRect(-s / 2, -s / 2, s, s);
-      ctx.restore();
-      if (cube.n !== undefined) {
-        ctx.fillStyle = "#f1f2f6";
-        ctx.font = "700 20px Segoe UI";
-        ctx.fillText(String(cube.n), x + 16, y - 10);
-      }
-      if (d * scale > radius) {
-        ctx.fillStyle = colour;
-        ctx.font = "600 18px Segoe UI";
-        ctx.fillText(`${Math.round(d)} m`, c + Math.cos(a) * (radius - 26), c + Math.sin(a) * (radius - 26) + 6);
-      }
-    }
-  }
-
-  // The player: a triangle pointing along the heading, or a dot when the radar is north-up.
-  ctx.fillStyle = "#f1f2f6";
-  ctx.beginPath();
-  if (heading === undefined) ctx.arc(c, c, 7, 0, Math.PI * 2);
-  else {
-    ctx.moveTo(c, c - 13);
-    ctx.lineTo(c + 9, c + 9);
-    ctx.lineTo(c - 9, c + 9);
-  }
-  ctx.fill();
+  let focus = cubes[0];
+  updateSonar(focus && !focus.taken ? (distanceTo(focus) ?? SONAR.maxM) : undefined);
 }
 
 // --- sound --------------------------------------------------------------------------------
 
 let audio;
-function tone(freq, start, length, gain) {
+function tone(freq, start, length, gain, type = "sine") {
   audio ??= new AudioContext();
-  let t = audio.currentTime + start;
+  let t = Math.max(audio.currentTime, start);
   let osc = audio.createOscillator();
   let amp = audio.createGain();
-  osc.type = "sine";
+  osc.type = type;
   osc.frequency.value = freq;
   amp.gain.setValueAtTime(0, t);
-  amp.gain.linearRampToValueAtTime(gain * state.settings.volume, t + 0.01);
+  amp.gain.linearRampToValueAtTime(gain * state.settings.volume, t + 0.005);
   amp.gain.exponentialRampToValueAtTime(0.0001, t + length);
   osc.connect(amp).connect(audio.destination);
   osc.start(t);
@@ -386,37 +124,68 @@ function announceNewCubes(previous) {
   if (!previous || fresh.length === 0) return;
   freshUntil = Date.now() + 1800;
   if (state.settings.chime) {
-    tone(784, 0, 0.35, 0.35);
-    tone(1175, 0.12, 0.45, 0.35);
-    tone(1568, 0.24, 0.6, 0.3);
+    audio ??= new AudioContext();
+    let now = audio.currentTime;
+    tone(784, now, 0.35, 0.35);
+    tone(1175, now + 0.12, 0.45, 0.35);
+    tone(1568, now + 0.24, 0.6, 0.3);
   }
 }
 
-// Every metre closer sounds like the same step closer: tempo and pitch move geometrically from slow
-// and low at SONAR_MAX_M to quick and high on the cube, with no jump on arrival. Walking away
-// lowers the pitch again. The distance is smoothed so the estimate's wobble does not jerk the rhythm.
-const SONAR = { slowMs: 1300, fastMs: 160, lowHz: 440, highHz: 1320, smoothMs: 600 };
+// Tempo, pitch and loudness all rise smoothly from maxM to the cube, with no jump on arrival. The
+// curve gives the last metres more of the range, as that is where the map's exact position is
+// worth hearing. An announced cube is in range whatever the estimate says, so past maxM the sonar
+// keeps its slowest beat. The exact track is followed at once; the estimate wanders by metres, so it
+// is smoothed.
+const SONAR = {
+  maxM: 60,
+  curve: 0.7,
+  slowMs: 1200,
+  fastMs: 120,
+  lowHz: 520,
+  highHz: 2080,
+  farGain: 0.3,
+  nearGain: 0.6,
+  farLength: 0.13,
+  nearLength: 0.07,
+  smoothExactMs: 150,
+  smoothEstimateMs: 900,
+  tickMs: 30,
+  aheadS: 0.09,
+};
 
 let sonarTimer;
 let sonarDistance; // smoothed
 let sonarAt;
+let lastBeat; // audio-clock time of the last beat
+
 function updateSonar(distance) {
-  if (!state?.settings.sonar || distance === undefined || distance > SONAR_MAX_M) {
+  if (!state?.settings.sonar || distance === undefined) {
+    clearInterval(sonarTimer);
+    sonarTimer = undefined;
     sonarDistance = undefined;
+    lastBeat = undefined;
     return;
   }
   let now = Date.now();
+  let smoothMs = state.self?.source === "minimap" ? SONAR.smoothExactMs : SONAR.smoothEstimateMs;
   if (sonarDistance === undefined) sonarDistance = distance;
-  else sonarDistance += (distance - sonarDistance) * (1 - Math.exp(-(now - sonarAt) / SONAR.smoothMs));
+  else sonarDistance += (distance - sonarDistance) * (1 - Math.exp(-(now - sonarAt) / smoothMs));
   sonarAt = now;
-  if (!sonarTimer) sonarTick();
+  sonarTimer ??= setInterval(sonarTick, SONAR.tickMs);
 }
 
+// Beats sit on the audio clock, placed a little ahead, so a busy PC does not shake the rhythm. The
+// next beat is worked out again on each tick: running towards the cube shortens the wait right away.
 function sonarTick() {
-  sonarTimer = undefined;
-  if (sonarDistance === undefined) return;
-  let closeness = 1 - Math.min(1, sonarDistance / SONAR_MAX_M);
+  audio ??= new AudioContext();
+  if (audio.state === "suspended") audio.resume();
+  let closeness = 1 - Math.min(1, sonarDistance / SONAR.maxM) ** SONAR.curve;
   let between = (far, near) => far * (near / far) ** closeness;
-  tone(between(SONAR.lowHz, SONAR.highHz), 0, 0.08, 0.1 + 0.08 * closeness);
-  sonarTimer = setTimeout(sonarTick, between(SONAR.slowMs, SONAR.fastMs));
+  let linear = (far, near) => far + (near - far) * closeness;
+  let now = audio.currentTime;
+  let next = lastBeat === undefined ? now : lastBeat + between(SONAR.slowMs, SONAR.fastMs) / 1000;
+  if (next > now + SONAR.aheadS) return;
+  lastBeat = Math.max(next, now);
+  tone(between(SONAR.lowHz, SONAR.highHz), lastBeat, linear(SONAR.farLength, SONAR.nearLength), linear(SONAR.farGain, SONAR.nearGain), "triangle");
 }

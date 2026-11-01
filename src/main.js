@@ -19,7 +19,7 @@ const LOG_FILE = path.join(USER_DIR, "chaser.log");
 const SETTINGS_FILE = path.join(USER_DIR, "settings.json");
 const WORKER_DIR = path.join(USER_DIR, "worker");
 const ICON = path.join(__dirname, "..", "assets", "icon.png");
-const OVERLAY_SIZE = { width: 340, height: 540 };
+const OVERLAY_SIZE = { width: 340, height: 170 };
 const PUSH_INTERVAL_MS = 100;
 const PURGE_INTERVAL_MS = 60 * 60 * 1000;
 const PURGE_AGE_MS = 6 * 60 * 60 * 1000;
@@ -36,8 +36,6 @@ const MINIMAP_ACCURACY = 100; // cm: the reference map has about 1 px per metre
 
 const DEFAULT_SETTINGS = {
   bounds: undefined,
-  compass: false, // the dial arrow: the corner-map markers guide better than a movement heading
-  arrowMode: "movement", // "north" | "movement" (north-up while standing still)
   // Exact position read from the game's corner map. region/anchor unset = Map Overlay's ones;
   // scale (reference px per screen px) and mapKey are learnt on the first fix and kept.
   minimap: { enabled: true, region: undefined, anchor: undefined, scale: undefined, mapKey: undefined },
@@ -46,7 +44,7 @@ const DEFAULT_SETTINGS = {
   volume: 0.6,
   mapOverlayExport: true,
   streamable: false, // hidden from OBS/Discord/screenshots until switched on, like Map Overlay
-  alwaysShow: false, // keep a small status panel up while the game runs, even with no cube
+  statusAlways: true, // keep the map status up while the game runs, even with no cube
   respawnSpots: false, // once a cube is opened, mark the spots of its group it may come back on
   questlogAsar: DEFAULT_ASAR,
   loginItemInitialized: false,
@@ -210,7 +208,7 @@ function respawnState() {
   for (let r of respawns.values()) {
     let all = groupSpots(r.map, r.group);
     all.forEach(([x, y, z], i) => spots.push({ key: `${r.group}#${i}`, x, y, z, checked: r.checked.has(i) }));
-    summary.push({ label: r.label, total: all.length, left: all.length - r.checked.size, since: r.since });
+    summary.push({ label: r.label, total: all.length, left: all.length - r.checked.size });
   }
   return { spots, respawns: summary };
 }
@@ -226,26 +224,18 @@ function snapshot() {
   if (live.cubes.length === 0) cubeNumbers.clear();
   let byAge = [...live.cubes].sort((a, b) => (a.createdAt ?? a.seenAt) - (b.createdAt ?? b.seenAt));
   for (let c of byAge) cubeNumber(c);
-  let cubes = live.cubes.map((c) => {
-    let spot = cubeSpot(c.id, map);
-    return {
-      key: c.id,
-      n: cubeNumber(c),
-      entity: c.entity,
-      look: c.look,
-      spawned: c.spawned,
-      taken: c.takenAt !== undefined,
-      since: c.createdAt ?? c.seenAt,
-      rise: c.rise,
-      spot: spot ? { label: spot.label, n: spot.index + 1, of: spot.count } : undefined,
-      ...cubeCoordinates(c, positions.objects),
-    };
-  });
+  let cubes = live.cubes.map((c) => ({
+    key: c.id,
+    n: cubeNumber(c),
+    look: c.look,
+    taken: c.takenAt !== undefined,
+    rise: c.rise,
+    ...cubeCoordinates(c, positions.objects),
+  }));
   return {
     status: live.status,
     game: live.game,
     map,
-    mapName: MAPS[map]?.name,
     self,
     minimap: live.minimap.status,
     cubes,
@@ -261,8 +251,7 @@ function pushState(force = false) {
   pushTimer = setTimeout(() => {
     pushTimer = undefined;
     let state = { ...snapshot(), edit: editMode, demo: !!demo, settings };
-    let markerList = updateMarkers(state);
-    state.markersShown = !!markerList?.length;
+    updateMarkers(state);
     let text = JSON.stringify(state);
     if (text !== lastPushed) {
       lastPushed = text;
@@ -276,7 +265,7 @@ function pushState(force = false) {
 function updateVisibility(state) {
   if (!overlay) return;
   let wanted =
-    editMode || state.demo || (state.game && (state.cubes.length > 0 || state.respawns?.length > 0 || settings.alwaysShow));
+    editMode || state.demo || (state.game && (state.cubes.length > 0 || state.respawns?.length > 0 || settings.statusAlways));
   if (wanted === overlay.isVisible()) return;
   if (wanted) overlay.showInactive();
   else overlay.hide();
@@ -312,7 +301,7 @@ function createMarkersWindow() {
 // Where each cube sits on the corner map, from the latest exact fix: the fix is the world point
 // under the anchor pixel, and the calibrated zoom turns metres into screen pixels.
 function updateMarkers(state) {
-  if (!markersWin) return undefined;
+  if (!markersWin) return;
   let fix = live.minimap.fix;
   let chosen = minimapRegion();
   let usable =
@@ -345,7 +334,6 @@ function updateMarkers(state) {
   markersWin.webContents.send("markers", list);
   if (list.length && !markersWin.isVisible()) markersWin.showInactive();
   if (!list.length && markersWin.isVisible()) markersWin.hide();
-  return list;
 }
 
 const exporter = new MapOverlayExport(log);
@@ -507,11 +495,11 @@ function startDemo() {
         status: { state: "capturing" },
         game: true,
         map: 1010,
-        mapName: "Verteron (démo)",
+        minimap: progress > 0.5 ? "fix" : "searching",
         self,
         cubes: [
-          { key: "demo-1", n: 1, look: "gold", spawned: true, taken: t > 44, since: started - 4000, rise: 3, ...cube },
-          { key: "demo-2", n: 2, look: "red", spawned: false, taken: false, since: started - 90000, rise: -1, x: cube.x + 2200, y: cube.y + 1500 },
+          { key: "demo-1", n: 1, look: "gold", taken: t > 44, rise: 3, ...cube },
+          { key: "demo-2", n: 2, look: "red", taken: false, rise: -1, x: cube.x + 2200, y: cube.y + 1500 },
         ],
       };
     },
@@ -567,7 +555,7 @@ function createOverlay() {
   overlay.on("moved", () => saveSettings({ bounds: overlay.getBounds() }));
   setInterval(() => {
     for (let win of [overlay, markersWin]) {
-      if (!win?.isVisible()) continue;
+      if (!win || win.isDestroyed() || !win.isVisible()) continue; // destroyed while quitting
       win.setAlwaysOnTop(true, "screen-saver");
       win.moveTop();
     }
@@ -617,12 +605,11 @@ function rebuildTray() {
     checked: !!settings[key],
     click: (item) => saveSettings({ [key]: item.checked }),
   });
-  let radio = (label, value) => ({
+  let volume = (label, value) => ({
     label,
     type: "radio",
-    enabled: settings.compass,
-    checked: settings.arrowMode === value,
-    click: () => saveSettings({ arrowMode: value }),
+    checked: settings.volume === value,
+    click: () => saveSettings({ volume: value }),
   });
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -638,10 +625,6 @@ function rebuildTray() {
           saveSettings({ bounds: overlay.getBounds() });
         },
       },
-      { type: "separator" },
-      check("Boussole (flèche de direction)", "compass"),
-      radio("Nord de la carte en haut", "north"),
-      radio("Sens de déplacement (nord à l'arrêt)", "movement"),
       { type: "separator" },
       {
         label: "Lire la mini-carte (position exacte)",
@@ -668,10 +651,14 @@ function rebuildTray() {
         },
       },
       { type: "separator" },
-      check("Toujours afficher (même sans cube)", "alwaysShow"),
+      check("Encart toujours visible (même sans cube)", "statusAlways"),
       check("Montrer où un cube ouvert peut réapparaître", "respawnSpots"),
       check("Son à l'apparition d'un cube", "chime"),
       check("Sonar de proximité", "sonar"),
+      volume("Volume faible", 0.3),
+      volume("Volume normal", 0.6),
+      volume("Volume fort", 1),
+      { type: "separator" },
       check("Marqueur dans Map Overlay", "mapOverlayExport"),
       {
         label: "Visible en stream / enregistrement",

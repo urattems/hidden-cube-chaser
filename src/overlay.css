@@ -1,12 +1,14 @@
 :root {
   --bg: rgb(14 16 22 / 0.82);
-  --line: rgb(255 255 255 / 0.12);
   --text: #f1f2f6;
   --muted: #9aa1b2;
   --gold: #f5b91a;
   --red: #ff5252;
-  --near: #4ade80;
-  --accent: var(--gold);
+  --good: #4ade80;
+  --wait: #fbbf24;
+  --bad: #f87171;
+  --respawn: #7dd3fc;
+  --accent: var(--muted);
 }
 
 * {
@@ -27,21 +29,9 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 8px;
   height: 100vh;
-}
-
-body.red {
-  --accent: var(--red);
-}
-
-body.near {
-  --accent: var(--near);
-}
-
-.hidden {
-  display: none !important;
 }
 
 #edit-banner {
@@ -63,45 +53,24 @@ body.edit #edit-banner {
 }
 
 .card {
-  width: 100%;
+  max-width: 100%;
   background: var(--bg);
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  border-radius: 14px;
-  padding: 10px 12px 9px;
-  box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 30%, transparent);
-  transition: border-color 0.4s, box-shadow 0.4s;
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: 10px;
+  padding: 5px 11px;
+  transition: border-color 0.3s;
 }
 
-.card.idle {
-  --accent: #9aa1b2;
-  opacity: 0.8;
-  box-shadow: none;
+.card.good {
+  --accent: var(--good);
 }
 
-.card.idle .main,
-.card.idle .coords {
-  display: none;
+.card.wait {
+  --accent: var(--wait);
 }
 
-.card.idle .hint {
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.card.idle.respawn {
-  --accent: #7dd3fc;
-  opacity: 1;
-}
-
-.card.idle.respawn .hint {
-  font-size: 12px;
-  color: var(--text);
-}
-
-.card.taken {
-  --accent: #6b7280;
-  opacity: 0.75;
+.card.bad {
+  --accent: var(--bad);
 }
 
 .card.fresh {
@@ -110,181 +79,58 @@ body.edit #edit-banner {
 
 @keyframes pop {
   50% {
-    box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 70%, transparent);
+    box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 70%, transparent);
   }
 }
 
-header {
+.status {
   display: flex;
   align-items: center;
   gap: 7px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
-.gem {
-  width: 12px;
-  height: 12px;
-  transform: rotate(45deg);
-  border-radius: 2px;
+.dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
+  box-shadow: 0 0 7px var(--accent);
+  transition: background-color 0.3s;
 }
 
-.badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  color: var(--accent);
-}
-
-.age {
-  margin-left: auto;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  font-weight: 400;
-}
-
-.main {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 6px;
-}
-
-.dial {
-  width: 112px;
-  height: 112px;
-  flex: none;
-}
-
-body.no-compass .dial {
+.cubes:empty {
   display: none;
 }
 
-.dial svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.ring {
-  fill: rgb(255 255 255 / 0.04);
-  stroke: var(--line);
-  stroke-width: 2;
-}
-
-.dial-label {
-  fill: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-  text-anchor: middle;
-  dominant-baseline: middle;
-}
-
-.arrow {
-  transition: transform 0.25s linear;
-}
-
-.arrow path {
-  fill: var(--accent);
-  filter: drop-shadow(0 0 6px var(--accent));
-}
-
-.arrow path.cone {
-  fill: color-mix(in srgb, var(--accent) 28%, transparent);
-  filter: none;
-  transition: d 0.4s;
-}
-
-.card.taken .arrow {
-  opacity: 0.25;
-}
-
-.hub {
-  fill: var(--text);
-}
-
-.readout {
-  min-width: 0;
-}
-
-.distance {
-  font-size: 44px;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  color: var(--accent);
-  text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent);
-}
-
-.distance small {
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.accuracy {
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.direction {
-  font-size: 15px;
-  font-weight: 600;
-  margin-top: 5px;
-}
-
-.rise {
-  font-size: 13px;
-  color: var(--text);
-}
-
-.hint {
-  margin-top: 7px;
-  font-size: 12px;
-  color: var(--text);
-  opacity: 0.9;
-}
-
-.hint:empty,
-.coords:empty {
-  display: none;
-}
-
-.coords {
+.cubes {
   margin-top: 3px;
-  font-size: 11px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  white-space: pre-line;
-}
-
-.radar-wrap {
-  position: relative;
-  width: 220px;
-  height: 220px;
-  flex: none;
-}
-
-#radar {
-  width: 220px;
-  height: 220px;
-}
-
-.others {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 5px 10px;
-  white-space: pre-line;
   font-size: 12px;
   font-weight: 600;
-  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
 }
 
-.others:empty {
-  display: none;
+.cube {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cube.red {
+  color: var(--red);
+}
+
+.cube.gold {
+  color: var(--gold);
+}
+
+.cube.respawn {
+  color: var(--respawn);
+}
+
+.cube.taken {
+  color: var(--muted);
 }

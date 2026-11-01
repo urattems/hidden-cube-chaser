@@ -1,7 +1,7 @@
 # Hidden Cube Chaser
 
-Overlay Aion 2 qui guide vers les cubes cachés : distance, flèche, radar, et ta position exacte
-lue sur la carte d'angle du jeu.
+Overlay Aion 2 qui guide vers les cubes cachés : marqueurs sur la carte d'angle du jeu, sonar de
+proximité, et un petit encart qui dit d'un coup d'œil si la carte est bien lue.
 
 ## Comment ça marche
 
@@ -21,32 +21,31 @@ lue sur la carte d'angle du jeu.
   - Une fenêtre qui recouvre une partie de la carte ne gêne pas : la carte est découpée en 3 × 3
     morceaux, et une majorité d'accord suffit.
   - Dans un donjon, une grotte, ou si la carte d'angle est fermée, Chaser revient à
-    l'estimation de Questlog, avec le cône d'incertitude autour de la flèche. Il ne donne jamais
-    une position douteuse pour une position exacte.
+    l'estimation de Questlog. Il ne donne jamais une position douteuse pour une position exacte :
+    les distances estimées sont précédées de « ≈ ».
 - **Les cubes sont dessinés sur la carte d'angle du jeu** (en bas à droite), à leur place exacte
   et numérotés, dès que Chaser y lit ta position. Un cube hors du cadre devient une flèche au
-  bord avec sa distance. La carte d'angle doit être **ouverte** : si elle est fermée quand un
-  cube apparaît, l'overlay te le rappelle. Les marqueurs n'apparaissent jamais dans les
-  captures d'écran, sinon la lecture de la carte les confondrait avec le terrain.
-- **Plusieurs cubes** : chacun garde son numéro (Cube 1, Cube 2…) sur l'overlay, le radar et la
-  carte d'angle. L'overlay vise le plus proche et liste les autres avec leur distance.
+  bord avec sa distance. La carte d'angle doit être **ouverte**. Les marqueurs n'apparaissent
+  jamais dans les captures d'écran, sinon la lecture de la carte les confondrait avec le terrain.
+- **L'encart** reste affiché tant que le jeu tourne. Sa pastille est **verte** (« Carte OK ») quand
+  les marqueurs peuvent être dessinés, **orange** quand Chaser cherche la carte ou attend une
+  première position, **rouge** quand la carte n'est pas lue (fermée, cachée) ou que la capture a un
+  problème. En dessous, une ligne par cube : son numéro, sa couleur, sa distance, et l'écart de
+  hauteur s'il dépasse 2 m.
 - **Groupes d'emplacements** : chaque cube appartient à un groupe d'emplacements possibles (95
   groupes et 1440 emplacements à Verteron, 59 et 1371 à Altgard, lus dans le client par
-  aion2maps). L'overlay indique le groupe du cube, par exemple « Altamia Southern 03 ·
-  emplacement 14/20 ». Avec l'option **Montrer où un cube ouvert peut réapparaître** (décochée
+  aion2maps). Avec l'option **Montrer où un cube ouvert peut réapparaître** (décochée
   par défaut), un cube ouvert fait apparaître tous les emplacements de son groupe en points bleus
   sur la carte d'angle : il reviendra sur l'un d'eux. Un point devient gris quand tu passes à
   moins de 30 m sans qu'un cube y soit annoncé (pendant 5 min, car la réapparition peut tarder).
   Le plus proche hors du cadre devient une flèche au bord. Les points disparaissent dès que le
   nouveau cube est détecté, ou après 30 min. Le journal note le délai de chaque réapparition.
   Données : `node tools\extract-cube-spots.js <dossier aion2maps>` régénère `src\data\cube-spots.json`.
-- **Le sonar** bipe de plus en plus vite et de plus en plus aigu en approchant, régulièrement,
-  sans saut à l'arrivée : chaque mètre gagné s'entend. S'il redescend, tu t'éloignes. Il commence
-  à 60 m.
-- **La boussole** (flèche à côté de la distance) est masquée par défaut : les marqueurs de la
-  carte d'angle guident mieux. Si tu la réactives, elle suit ta direction de déplacement
-  (« Devant, à gauche »…), ou garde le nord en haut, comme la carte du jeu. Sans elle, le radar
-  et le texte de direction ont le nord en haut.
+- **Le sonar** suit le cube ouvert le plus proche. Il bipe de plus en plus vite, aigu et fort en
+  approchant, sans saut à l'arrivée, et les derniers mètres s'entendent le mieux. S'il redescend,
+  tu t'éloignes. Quand la carte est lue, il suit ta position exacte sans retard. Sinon il suit
+  l'estimation, lissée, et reste moins fiable : vérifie que l'encart est vert. Un cube annoncé est
+  toujours entendu, au rythme le plus lent au-delà de 60 m.
 
 ## Installation sur un autre PC
 
@@ -81,22 +80,19 @@ affiche « connexion GitHub requise ». Depuis les sources, la mise à jour se f
 - Lancer : `Hidden Cube Chaser.exe` (version portable), ou depuis les sources
   `Hidden Cube Chaser.vbs`. Une icône de cube apparaît dans la barre des tâches. Chaser démarre
   ensuite avec Windows, comme Questlog.
-- L'overlay ne s'affiche que si le jeu tourne **et** qu'un cube est détecté. Avec **Toujours
-  afficher (même sans cube)**, une petite barre reste visible tant que le jeu tourne. Elle
-  indique aussi l'état de la mini-carte (« position exacte ✓ »). Le jeu doit être en
-  **plein écran fenêtré** (borderless).
+- L'encart s'affiche tant que le jeu tourne. Décoche **Encart toujours visible (même sans cube)**
+  pour ne le voir que lorsqu'un cube est détecté. Le jeu doit être en **plein écran fenêtré**
+  (borderless).
 - Avec deux écrans, l'overlay s'ouvre sur l'écran principal : utilise **Déplacer l'overlay**
   pour le mettre sur l'écran du jeu.
 - Icône de la barre des tâches :
   - État de la capture et de la mini-carte
   - **Déplacer l'overlay**, puis **Verrouiller** une fois placé
-  - **Aperçu (démo 50 s)** pour voir l'overlay sans cube
-  - **Boussole (flèche de direction)**, puis son sens : déplacement (nord à l'arrêt) ou nord de
-    la carte en haut
+  - **Aperçu (démo 50 s)** pour voir l'encart et entendre le sonar sans cube
   - **Lire la mini-carte (position exacte)**, **Sélectionner la zone de la mini-carte…**,
     **Reprendre la zone de Map Overlay**, **Recalibrer le zoom de la mini-carte**
   - **Montrer où un cube ouvert peut réapparaître** (décochée par défaut)
-  - Son à l'apparition, sonar de proximité (bips plus rapides et plus aigus en approchant)
+  - Son à l'apparition, sonar de proximité, volume des deux (faible, normal ou fort)
   - **Visible en stream / enregistrement** : décoché par défaut, l'overlay est invisible dans
     OBS, Discord et les captures d'écran. Coche-le pour le montrer, et utilise la *Capture
     d'écran* (Display Capture) d'OBS : la *Capture de jeu* ne voit jamais les overlays.
@@ -140,5 +136,3 @@ powershell -ExecutionPolicy Bypass -File tools\build-portable.ps1   # zip portab
   fausse, la carte d'angle n'est pas trouvée, et un buff ou une compétence la recale. Dès qu'un
   cube est annoncé, ses coordonnées servent de repère : la carte d'angle et son zoom sont retrouvés
   autour de lui, quelle que soit l'estimation.
-- La boussole, si activée, suit ta direction de **déplacement** : en tournant la caméra sur
-  place, elle garde ta dernière direction de marche.
