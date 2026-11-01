@@ -36,6 +36,13 @@
   const MISSES_BEFORE_RESCALE = 8;
   const RESCALE_COOLDOWN_MS = 8000;
   const UNKNOWN_SCALE_RETRY_MS = 3000;
+  // The server only announces a cube close by, so a cube in range says where the player is, whatever
+  // Questlog estimates, just when the position matters most. Well beyond the ~60 m seen so far.
+  const CUBE_RADIUS = 120;
+  const CUBE_MISSES = 2;
+  const CUBE_RETRY_MS = 1500;
+  const SWEEP_LEVEL = 8;
+  const SWEEP_CANDIDATES = 4; // a small template can score by chance: the true zoom may not come first
 
   const toRef = (cm) => cm * K + CENTER;
   const toWorld = (px) => (px - CENTER) / K;
@@ -53,10 +60,12 @@
     }
 
     // frame: { data: Float32Array gray, w, h } of the selected region at screen resolution.
-    // prior: { x, y, accuracy, map } in world cm from Questlog (any field may be missing).
+    // prior: { x, y, accuracy, map } in world cm from Questlog (any field may be missing), and
+    // cube: { x, y, map } of a cube in range, if any.
     async locate(frame, prior, anchor = { x: 0.5, y: 0.5 }, now = Date.now()) {
       let guess = this.guess(prior, now);
-      if (!guess) return { status: "no-prior" };
+      let cube = prior?.cube;
+      if (!guess && !cube) return { status: "no-prior" };
       let keys = this.candidateKeys(prior, now);
       if (!keys.length) return { status: "no-map" };
 
@@ -64,18 +73,24 @@
       let mean = 0;
       for (let v of crop.data) mean += v;
       if (mean / crop.data.length < DARK_MAP) return { status: "no-map" };
-      let cooled = now - this.lastRescale > (this.scale === undefined ? UNKNOWN_SCALE_RETRY_MS : RESCALE_COOLDOWN_MS);
-      if (this.scale === undefined && !cooled) return { status: "searching" };
-      let needScale = this.scale === undefined || (this.misses >= MISSES_BEFORE_RESCALE && cooled);
+      let retry = cube ? CUBE_RETRY_MS : this.scale === undefined ? UNKNOWN_SCALE_RETRY_MS : RESCALE_COOLDOWN_MS;
+      let cooled = now - this.lastRescale > retry;
+      if ((this.scale === undefined || !guess) && !cooled) return { status: "searching" };
+      let needScale =
+        this.scale === undefined || !guess || (this.misses >= (cube ? CUBE_MISSES : MISSES_BEFORE_RESCALE) && cooled);
       if (needScale) {
         this.lastRescale = now;
-        let found = await this.findScale(crop, frame, anchor, guess, keys);
+        let area = cube ? { x: cube.x, y: cube.y, radius: CUBE_RADIUS } : guess;
+        let found = await this.findScale(crop, frame, anchor, area, keys);
         if (!found) {
           this.misses++;
           return { status: "searching" };
         }
         this.scale = found.scale;
         this.mapKey = found.mapKey;
+        // Checked beyond doubt, wherever Questlog thinks the player is: go on from there.
+        this.last = { x: found.x, y: found.y, at: now };
+        guess = this.guess(prior, now);
         keys = [found.mapKey];
       }
 
@@ -121,8 +136,9 @@
     }
 
     candidateKeys(prior, now) {
-      if (prior?.map !== undefined && prior.map !== null) {
-        let known = MAP_KEYS[prior.map];
+      let map = prior?.map ?? prior?.cube?.map;
+      if (map !== undefined && map !== null) {
+        let known = MAP_KEYS[map];
         return known ? [known] : []; // a dungeon or another region: no reference to match
       }
       // Questlog only learns the map on a zone change, which can take minutes after logging in, and
@@ -226,18 +242,57 @@
     }
 
     async findScaleOn(crop, frame, anchor, guess, mapKey) {
+      if (guess.radius === CUBE_RADIUS) {
+        for (let best of await this.sweep(crop, frame, anchor, guess, mapKey)) {
+          let found = await this.checkScale(crop, frame, anchor, best, mapKey, 2 * SWEEP_LEVEL);
+          if (found) return found;
+        }
+        return undefined;
+      }
       let wide = { ...guess, radius: Math.max(guess.radius, 40) };
       let best;
       for (let s = SCALE_MIN; s <= SCALE_MAX + 1e-9; s *= SCALE_STEP) {
         let fix = await this.match(crop, frame, anchor, wide, mapKey, s, 4);
         if (fix && (!best || fix.score > best.score)) best = { ...fix, scale: s };
       }
-      if (!best || best.score < 0.3) return undefined;
+      return best && this.checkScale(crop, frame, anchor, best, mapKey, 12);
+    }
+
+    // Every zoom over a whole area, from one downsampled read of what the largest zoom needs. The
+    // best answers first, as { x, y, score, scale }.
+    async sweep(crop, frame, anchor, area, mapKey) {
+      let level = SWEEP_LEVEL;
+      let big = this.scaledTemplate(crop, frame, anchor, SCALE_MAX, level);
+      let r = Math.ceil(area.radius / level);
+      let x0 = Math.floor(toRef(area.x) / level - big.ax) - r - 3;
+      let y0 = Math.floor(toRef(area.y) / level - big.ay) - r - 3;
+      let rw = big.tw + 2 * r + 6;
+      let rh = big.th + 2 * r + 6;
+      let ref = await this.referenceAt(mapKey, x0, y0, rw, rh, level);
+      if (!ref) return [];
+      let answers = [];
+      for (let s = SCALE_MIN; s <= SCALE_MAX + 1e-9; s *= SCALE_STEP) {
+        let t = this.scaledTemplate(crop, frame, anchor, s, level);
+        let ex = toRef(area.x) / level - t.ax - x0;
+        let ey = toRef(area.y) / level - t.ay - y0;
+        let hit = NCC.locate(ref, rw, rh, t.data, t.tw, t.th, ex, ey, r);
+        answers.push({ x: toWorld((x0 + hit.x + t.ax) * level), y: toWorld((y0 + hit.y + t.ay) * level), score: hit.score, scale: s });
+      }
+      // Scenery behind a closed map scores below this, and checking it would be the costly part.
+      return answers
+        .filter((a) => a.score >= CALIBRATE_REFINED)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, SWEEP_CANDIDATES);
+    }
+
+    // From a coarse answer to a zoom beyond doubt, with where it puts the player, or undefined.
+    async checkScale(crop, frame, anchor, best, mapKey, radius) {
+      if (best.score < 0.3) return undefined;
       let refined = best;
       let span = best.scale * (SCALE_STEP - 1);
       for (let s = best.scale - span; s <= best.scale + span + 1e-9; s += span / 4) {
         if (s < SCALE_MIN * 0.8) continue;
-        let fix = await this.match(crop, frame, anchor, { x: best.x, y: best.y, radius: 12 }, mapKey, s, 2);
+        let fix = await this.match(crop, frame, anchor, { x: best.x, y: best.y, radius }, mapKey, s, 2);
         if (fix && fix.score > refined.score) refined = { ...fix, scale: s };
       }
       if (refined.score < CALIBRATE_REFINED) return undefined;
@@ -252,7 +307,7 @@
       // A calibration is kept for the session, so it must be beyond doubt: a strong whole-frame
       // score and most patches agreeing (a dark cave floor can otherwise pass for terrain).
       let calibrated = check && check.score >= CALIBRATE && check.patchesAgree >= CALIBRATE_PATCHES;
-      return calibrated ? { scale: check.scale, mapKey } : undefined;
+      return calibrated ? { scale: check.scale, mapKey, x: check.x, y: check.y } : undefined;
     }
   }
 

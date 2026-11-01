@@ -136,7 +136,9 @@ powershell -ExecutionPolicy Bypass -File tools\build-portable.ps1   # zip portab
   Map Overlay a les tuiles. Ailleurs (Eltnen, Morheim…), l'overlay fonctionne avec la position
   estimée. Tant que Questlog ne connaît pas la carte (après un lancement, jusqu'au premier
   changement de zone), Chaser essaie Verteron et Altgard tour à tour.
-- La position exacte part de l'estimation de Questlog : si celle-ci est trop fausse, la carte
-  d'angle n'est pas trouvée. Un buff ou une compétence la recale.
+- Sans cube à portée, la position exacte part de l'estimation de Questlog : si celle-ci est trop
+  fausse, la carte d'angle n'est pas trouvée, et un buff ou une compétence la recale. Dès qu'un
+  cube est annoncé, ses coordonnées servent de repère : la carte d'angle et son zoom sont retrouvés
+  autour de lui, quelle que soit l'estimation.
 - La boussole, si activée, suit ta direction de **déplacement** : en tournant la caméra sur
   place, elle garde ta dernière direction de marche.

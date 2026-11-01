@@ -378,6 +378,21 @@ function minimapRegion() {
   return fromOverlay && { ...fromOverlay, from: "map-overlay" };
 }
 
+// What the corner-map reader starts from: Questlog's estimate, and a cube in range if there is one.
+let lastEstimate;
+function sendPrior() {
+  lastEstimate = live.positions?.self ?? lastEstimate;
+  let map = live.positions?.map;
+  let open = live.cubes.filter((c) => c.takenAt === undefined);
+  let newest = open.sort((a, b) => (b.createdAt ?? b.seenAt) - (a.createdAt ?? a.seenAt))[0];
+  let cube;
+  if (newest) {
+    let [x, y] = String(newest.id).split(":").map(Number);
+    cube = { x, y, map: cubeSpot(newest.id, map)?.map };
+  }
+  minimap.prior({ x: lastEstimate?.x, y: lastEstimate?.y, accuracy: lastEstimate?.accuracy, map, cube });
+}
+
 function minimapStatus(status) {
   if (status === live.minimap.status) return;
   log(`minimap ${status}`);
@@ -737,12 +752,12 @@ app.whenReady().then(() => {
       for (let c of data) if (!before.has(c.id)) log(`cube ${c.look} ${c.id} spawned=${c.spawned} minimap=${live.minimap.status}`);
       cubeTrace.update(data);
       live.cubes = data;
+      sendPrior();
       rebuildTray();
     } else if (procedurePath === "map.positions") {
       if (data.map !== live.positions?.map) log(`map ${data.map}`);
       live.positions = data;
-      let self = data.self;
-      if (self) minimap.prior({ x: self.x, y: self.y, accuracy: self.accuracy, map: data.map });
+      sendPrior();
     }
     pushState();
   });
