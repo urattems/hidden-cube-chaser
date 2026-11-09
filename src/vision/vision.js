@@ -19,6 +19,31 @@ let ctx = canvas.getContext("2d", { willReadFrequently: true });
 
 let tiles = new Map();
 
+// The sea around the zone, which the corner map leaves see-through (the scenery shows there): pale
+// and almost grey on the reference, unlike sand, grass, rock or inland water. Decided per 8 px
+// block, so a grey stone inside the zone stays land. Null for a tile with no sea.
+const SEA_BLOCK = 8;
+function landMask(rgba) {
+  let land;
+  for (let by = 0; by < TILE; by += SEA_BLOCK)
+    for (let bx = 0; bx < TILE; bx += SEA_BLOCK) {
+      let sea = 0;
+      for (let y = by; y < by + SEA_BLOCK; y++)
+        for (let x = bx; x < bx + SEA_BLOCK; x++) {
+          let i = (y * TILE + x) * 4;
+          let r = rgba[i];
+          let g = rgba[i + 1];
+          let max = Math.max(r, g, rgba[i + 2]);
+          let min = Math.min(r, g, rgba[i + 2]);
+          if (max > 140 && (max - min) * 255 < 32 * max && g >= r - 4) sea++;
+        }
+      if (sea < 0.75 * SEA_BLOCK * SEA_BLOCK) continue;
+      land ??= new Uint8Array(TILE * TILE).fill(1);
+      for (let y = by; y < by + SEA_BLOCK; y++) land.fill(0, y * TILE + bx, y * TILE + bx + SEA_BLOCK);
+    }
+  return land ?? null;
+}
+
 function loadTile(mapKey, tx, ty) {
   let key = `${mapKey}/${tx}/${ty}`;
   if (tiles.has(key)) {
@@ -33,7 +58,8 @@ function loadTile(mapKey, tx, ty) {
       let c = new OffscreenCanvas(TILE, TILE);
       let g = c.getContext("2d", { willReadFrequently: true });
       g.drawImage(img, 0, 0);
-      resolve(NCC.toGray(g.getImageData(0, 0, TILE, TILE).data, TILE, TILE));
+      let rgba = g.getImageData(0, 0, TILE, TILE).data;
+      resolve({ gray: NCC.toGray(rgba, TILE, TILE), land: landMask(rgba) });
     };
     img.onerror = () => resolve(null);
     img.src = `${config.mapsUrl}/${mapKey}/tiles/5/${tx}/${ty}.jpg`;
@@ -44,7 +70,8 @@ function loadTile(mapKey, tx, ty) {
 }
 
 async function reference(mapKey, x0, y0, w, h) {
-  let out = new Float32Array(w * h);
+  let gray = new Float32Array(w * h);
+  let land = null; // only built when some sea is in the window
   let any = false;
   for (let ty = Math.floor(y0 / TILE); ty <= Math.floor((y0 + h - 1) / TILE); ty++)
     for (let tx = Math.floor(x0 / TILE); tx <= Math.floor((x0 + w - 1) / TILE); tx++) {
@@ -56,10 +83,15 @@ async function reference(mapKey, x0, y0, w, h) {
       let ay = ty * TILE;
       let sx0 = Math.max(x0, ax);
       let sx1 = Math.min(x0 + w, ax + TILE);
-      for (let y = Math.max(y0, ay); y < Math.min(y0 + h, ay + TILE); y++)
-        out.set(t.subarray((y - ay) * TILE + (sx0 - ax), (y - ay) * TILE + (sx1 - ax)), (y - y0) * w + (sx0 - x0));
+      if (t.land && !land) land = new Float32Array(w * h).fill(1);
+      for (let y = Math.max(y0, ay); y < Math.min(y0 + h, ay + TILE); y++) {
+        let from = (y - ay) * TILE + (sx0 - ax);
+        let to = (y - y0) * w + (sx0 - x0);
+        gray.set(t.gray.subarray(from, from + sx1 - sx0), to);
+        if (t.land) land.set(t.land.subarray(from, from + sx1 - sx0), to);
+      }
     }
-  return any ? out : null;
+  return any ? { gray, land } : null;
 }
 
 // --- frames ------------------------------------------------------------------------------
@@ -106,6 +138,8 @@ async function tick() {
     return;
   }
   busy = true;
+  let started = performance.now();
+  let frameBefore = lastFrameAt;
   try {
     let { region } = config;
     let k = video.videoWidth / config.display.width; // the stream may come scaled
@@ -121,6 +155,9 @@ async function tick() {
     window.vision.report({ status: "error", error: String(e) });
   } finally {
     busy = false;
+    // A long search holds the page, so no frame can be seen meanwhile (a 6.6 s one on a busy PC
+    // passed for a dead capture): that time does not count as silence.
+    if (frameBefore !== undefined && lastFrameAt === frameBefore) lastFrameAt += performance.now() - started;
   }
 }
 

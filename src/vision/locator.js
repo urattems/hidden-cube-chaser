@@ -20,6 +20,11 @@
   const PATCH_GRID = 3;
   const PATCH_ACCEPT = 0.5;
   const PATCH_SLACK = 3; // px each patch may move from the whole-frame answer
+  // Around the zone the reference shows the sea, which the game leaves see-through: a patch mostly
+  // over it does not vote, and the votes needed shrink in proportion. Too few patches left on land
+  // and nothing is decided.
+  const PATCH_LAND = 0.6;
+  const MIN_LAND_PATCHES = 5;
   const CALIBRATE = 0.55;
   const CALIBRATE_PATCHES = 7;
   const CALIBRATE_REFINED = 0.45; // below this at half resolution, the costly last pass is not worth it
@@ -48,7 +53,8 @@
   const toWorld = (px) => (px - CENTER) / K;
 
   class MinimapLocator {
-    // reference(mapKey, x0, y0, w, h) -> Promise<Float32Array | null> in reference px.
+    // reference(mapKey, x0, y0, w, h) -> Promise<{ gray, land } | null> in reference px, land being
+    // a mask (1 on the map, 0 on the sea around the zone) or null when there is no sea there.
     constructor({ reference, scale, mapKey }) {
       this.reference = reference;
       this.scale = scale ?? undefined; // reference px per screen px
@@ -176,14 +182,15 @@
       let rh = t.th + 2 * r + 6;
       let ref = await this.referenceAt(mapKey, x0, y0, rw, rh, level);
       if (!ref) return undefined;
-      let hit = NCC.locate(ref, rw, rh, t.data, t.tw, t.th, ex - x0, ey - y0, r);
+      let hit = NCC.locate(ref.gray, rw, rh, t.data, t.tw, t.th, ex - x0, ey - y0, r, ref.land);
       let accepted = false;
       let patches;
       if (level === 1 && hit.score >= WEAK) {
         patches = this.patchVote(ref, rw, rh, t, hit);
         accepted =
-          (hit.score >= ACCEPT && patches.agree >= ACCEPT_PATCHES) ||
-          (hit.score >= WEAK && patches.agree >= WEAK_PATCHES);
+          patches.onLand >= MIN_LAND_PATCHES &&
+          ((hit.score >= ACCEPT && patches.agree >= patches.needed(ACCEPT_PATCHES)) ||
+            (hit.score >= WEAK && patches.agree >= patches.needed(WEAK_PATCHES)));
         // Under partial cover the agreeing patches know better than the whole frame.
         if (accepted && hit.score < ACCEPT) hit = { ...hit, x: hit.x + patches.dx, y: hit.y + patches.dy };
       }
@@ -193,6 +200,7 @@
         score: hit.score,
         patches: patches && `${patches.agree}/${patches.total}`,
         patchesAgree: patches?.agree ?? 0,
+        patchesCalibrated: !!patches && patches.onLand >= MIN_LAND_PATCHES && patches.agree >= patches.needed(CALIBRATE_PATCHES),
         accepted,
       };
     }
@@ -203,16 +211,23 @@
       let ph = Math.floor(t.th / PATCH_GRID);
       let agreeing = [];
       let total = 0;
-      if (pw < 16 || ph < 16) return { agree: 0, total: 0, dx: 0, dy: 0 };
-      let integ = NCC.integrals(ref, rw, rh);
+      let sea = 0;
+      let all = PATCH_GRID * PATCH_GRID;
+      if (pw < 16 || ph < 16) return { agree: 0, total: 0, onLand: 0, needed: () => Infinity, dx: 0, dy: 0 };
+      let integ = NCC.integrals(ref.gray, rw, rh, ref.land);
       for (let gy = 0; gy < PATCH_GRID; gy++)
         for (let gx = 0; gx < PATCH_GRID; gx++) {
+          let ex = Math.round(hit.x) + gx * pw;
+          let ey = Math.round(hit.y) + gy * ph;
+          let inRef = ex >= 0 && ey >= 0 && ex + pw <= rw && ey + ph <= rh;
+          if (inRef && NCC.landShare(integ, ex, ey, pw, ph) < PATCH_LAND) {
+            sea++;
+            continue;
+          }
           let patch = NCC.template(NCC.crop(t.data, t.tw, gx * pw, gy * ph, pw, ph), pw, ph);
           if (patch.norm < 1e-3 * pw * ph) continue; // flat patch: nothing to match
           total++;
-          let ex = Math.round(hit.x) + gx * pw;
-          let ey = Math.round(hit.y) + gy * ph;
-          let p = NCC.searchWindow(ref, rw, rh, integ, patch, ex - PATCH_SLACK, ey - PATCH_SLACK, ex + PATCH_SLACK, ey + PATCH_SLACK);
+          let p = NCC.searchWindow(ref.gray, rw, rh, integ, patch, ex - PATCH_SLACK, ey - PATCH_SLACK, ex + PATCH_SLACK, ey + PATCH_SLACK);
           let inside = Math.abs(p.x - ex) < PATCH_SLACK && Math.abs(p.y - ey) < PATCH_SLACK;
           if (p.score >= PATCH_ACCEPT && inside) agreeing.push({ dx: p.x - ex, dy: p.y - ey });
         }
@@ -220,6 +235,8 @@
       return {
         agree: agreeing.length,
         total,
+        onLand: all - sea,
+        needed: (votes) => Math.ceil((votes * (all - sea)) / all - 1e-9),
         dx: median(agreeing.map((a) => a.dx)),
         dy: median(agreeing.map((a) => a.dy)),
       };
@@ -228,7 +245,9 @@
     async referenceAt(mapKey, x0, y0, w, h, level) {
       if (level === 1) return this.reference(mapKey, x0, y0, w, h);
       let full = await this.reference(mapKey, x0 * level, y0 * level, w * level, h * level);
-      return full && NCC.resize(full, w * level, h * level, w, h);
+      if (!full) return null;
+      let shrink = (img) => img && NCC.resize(img, w * level, h * level, w, h);
+      return { gray: shrink(full.gray), land: shrink(full.land) };
     }
 
     // The corner map's zoom: try a range of scales coarsely, then refine around the best.
@@ -243,6 +262,13 @@
 
     async findScaleOn(crop, frame, anchor, guess, mapKey) {
       if (guess.radius === CUBE_RADIUS) {
+        // Most often the zoom is still right and only the estimate is off: one zoom around the cube
+        // costs a fraction of trying them all, which takes seconds on a busy PC.
+        if (this.scale !== undefined) {
+          let coarse = await this.match(crop, frame, anchor, guess, mapKey, this.scale, 4);
+          let fine = coarse && (await this.match(crop, frame, anchor, { x: coarse.x, y: coarse.y, radius: 6 }, mapKey, this.scale, 1));
+          if (fine?.accepted && fine.score >= CALIBRATE) return { scale: this.scale, mapKey, x: fine.x, y: fine.y };
+        }
         for (let best of await this.sweep(crop, frame, anchor, guess, mapKey)) {
           let found = await this.checkScale(crop, frame, anchor, best, mapKey, 2 * SWEEP_LEVEL);
           if (found) return found;
@@ -275,7 +301,7 @@
         let t = this.scaledTemplate(crop, frame, anchor, s, level);
         let ex = toRef(area.x) / level - t.ax - x0;
         let ey = toRef(area.y) / level - t.ay - y0;
-        let hit = NCC.locate(ref, rw, rh, t.data, t.tw, t.th, ex, ey, r);
+        let hit = NCC.locate(ref.gray, rw, rh, t.data, t.tw, t.th, ex, ey, r, ref.land);
         answers.push({ x: toWorld((x0 + hit.x + t.ax) * level), y: toWorld((y0 + hit.y + t.ay) * level), score: hit.score, scale: s });
       }
       // Scenery behind a closed map scores below this, and checking it would be the costly part.
@@ -306,7 +332,7 @@
       }
       // A calibration is kept for the session, so it must be beyond doubt: a strong whole-frame
       // score and most patches agreeing (a dark cave floor can otherwise pass for terrain).
-      let calibrated = check && check.score >= CALIBRATE && check.patchesAgree >= CALIBRATE_PATCHES;
+      let calibrated = check && check.score >= CALIBRATE && check.patchesCalibrated;
       return calibrated ? { scale: check.scale, mapKey, x: check.x, y: check.y } : undefined;
     }
   }

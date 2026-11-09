@@ -20,6 +20,10 @@ proximité, et un petit encart qui dit d'un coup d'œil si la carte est bien lue
     tu zoomes.
   - Une fenêtre qui recouvre une partie de la carte ne gêne pas : la carte est découpée en 3 × 3
     morceaux, et une majorité d'accord suffit.
+  - Au bord d'une zone, la carte d'angle laisse voir le décor là où la carte de référence montre
+    la mer. Chaser repère cette mer à sa couleur et ne compare que la terre : les morceaux posés
+    sur la mer ne votent pas, et la majorité demandée baisse d'autant (5 morceaux sur terre au
+    minimum).
   - Dans un donjon, une grotte, ou si la carte d'angle est fermée, Chaser revient à
     l'estimation de Questlog. Il ne donne jamais une position douteuse pour une position exacte :
     les distances estimées sont précédées de « ≈ ».
